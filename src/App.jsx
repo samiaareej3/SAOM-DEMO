@@ -10,6 +10,7 @@ import Home from "./pages/Home";
 import Signin from "./pages/Signin";
 import Signup from "./pages/Signup";
 import Forget from "./pages/Forget";
+import Dashboard from "./pages/Dashboard";
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -44,6 +45,7 @@ function AnimatedRoutes() {
             path="/forgot-password"
             element={<Forget />}
           />
+          <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
       </motion.div>
     </AnimatePresence>
