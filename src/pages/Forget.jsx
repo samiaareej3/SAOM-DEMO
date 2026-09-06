@@ -1,26 +1,138 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
 import { gsap } from "gsap";
 import HoverInvert from "../components/HoverInvert.jsx";
-import AuthDoors, {
-  SignalDot,
-  StatusTicker,
-  FieldLabel,
-  StatusBanner,
-  SubmitButton,
-  RequirementRow,
-} from "../components/AuthDoors.jsx";
+import NetworkField from "../components/NetworkField.jsx";
 
 const FORGET_TICKER = ["ACCESS SUSPENDED", "IDENTITY REVALIDATING", "CONTROL RESTORING"];
 
-function Forget() {
-  const formRef = useRef(null);
-  const navigate = useNavigate();
+/* Cycles short system-status lines. Purely decorative — carries no
+   auth state and never blocks or delays the real flow. */
+function StatusTicker({ messages, className = "" }) {
+  const [index, setIndex] = useState(0);
 
-  // ============================================================
-  // STATE — UNCHANGED
-  // ============================================================
+  useEffect(() => {
+    const id = setInterval(() => {
+      setIndex((i) => (i + 1) % messages.length);
+    }, 2600);
+    return () => clearInterval(id);
+  }, [messages.length]);
+
+  return (
+    <span className={`relative inline-block h-4 overflow-hidden ${className}`}>
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={messages[index]}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="absolute inset-0"
+        >
+          {messages[index]}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/* ============================================================
+   LOCAL PRESENTATION HELPERS
+   ============================================================ */
+
+function Wordmark({ tone = "ink" }) {
+  return (
+    <span
+      className={`font-mono-tech text-sm tracking-[0.15em] ${
+        tone === "paper" ? "text-paper" : "text-ink"
+      }`}
+    >
+      SAOM<span className="text-signal">.</span>AI
+    </span>
+  );
+}
+
+function SignalDot({ className = "" }) {
+  return (
+    <span className={`relative flex h-1.5 w-1.5 ${className}`}>
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal opacity-75" />
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-signal" />
+    </span>
+  );
+}
+
+function FieldLabel({ htmlFor, children }) {
+  return (
+    <label htmlFor={htmlFor} className="mb-2 block text-sm text-ink/70">
+      {children}
+    </label>
+  );
+}
+
+function StatusBanner({ tone = "error", children }) {
+  const styles =
+    tone === "error"
+      ? "border-signal/25 bg-signal/[0.06] text-[#b3001f]"
+      : "border-ink/15 bg-ink/[0.04] text-ink/80";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-lg border px-4 py-3 text-sm ${styles}`}
+      role="status"
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function SubmitButton({ children, disabled, className = "" }) {
+  const ref = useRef(null);
+  const x = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
+  const y = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
+
+  function handleMove(e) {
+    const rect = ref.current.getBoundingClientRect();
+    x.set((e.clientX - rect.left - rect.width / 2) * 0.35);
+    y.set((e.clientY - rect.top - rect.height / 2) * 0.35);
+  }
+  function handleLeave() {
+    x.set(0);
+    y.set(0);
+  }
+
+  return (
+    <motion.button
+      ref={ref}
+      type="submit"
+      disabled={disabled}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      style={{ x, y }}
+      className={`group relative inline-flex w-full items-center justify-center gap-3 border border-ink bg-ink px-7 py-3.5 text-sm font-medium tracking-wide text-paper transition-colors duration-500 ease-signal hover:border-signal hover:bg-signal disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-ink disabled:hover:bg-ink ${className}`}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+function RequirementRow({ met, children }) {
+  return (
+    <span className={met ? "text-emerald-600" : "text-ink/35"}>
+      {met ? "✓" : "○"} {children}
+    </span>
+  );
+}
+
+/* ============================================================
+   FORGOT / RESET PASSWORD
+   ============================================================ */
+
+function Forget() {
+  const pageRef = useRef(null);
+  const scanRef = useRef(null);
+  const navigate = useNavigate();
 
   const [step, setStep] = useState("email");
 
@@ -39,25 +151,44 @@ function Forget() {
   const [message, setMessage] = useState("");
 
   // ============================================================
-  // GSAP — field entrance only, scoped to whichever step is
-  // mounted. Framer Motion (in AuthDoors, and the per-step
-  // AnimatePresence below) owns opacity of the panel/step
-  // wrappers themselves — never the same element as GSAP.
+  // GSAP — ambient/entrance only. Framer Motion owns the card.
   // ============================================================
 
   useEffect(() => {
     const ctx = gsap.context(() => {
+      gsap.from(".forgot-brand", {
+        opacity: 0,
+        x: -24,
+        duration: 0.8,
+        delay: 0.1,
+        ease: "power3.out",
+      });
+
       gsap.from(".forgot-field", {
         opacity: 0,
         y: 14,
         duration: 0.5,
         stagger: 0.08,
+        delay: 0.3,
         ease: "power2.out",
       });
-    }, formRef);
+
+      gsap.fromTo(
+        scanRef.current,
+        { yPercent: -20, opacity: 0 },
+        {
+          yPercent: 120,
+          opacity: 1,
+          duration: 3.2,
+          repeat: -1,
+          repeatDelay: 1.4,
+          ease: "power1.inOut",
+        }
+      );
+    }, pageRef);
 
     return () => ctx.revert();
-  }, [step]);
+  }, []);
 
   // ============================================================
   // SEND RESET OTP — UNCHANGED
@@ -244,59 +375,85 @@ function Forget() {
   // ============================================================
 
   return (
-    <AuthDoors active="forgot">
-      <div ref={formRef} className="flex h-full w-full flex-col lg:flex-row">
-        {/* TAGLINE STRIP */}
-        <div className="forgot-field relative flex shrink-0 flex-col justify-center gap-3 overflow-hidden px-6 py-6 lg:w-[36%] lg:px-10 lg:py-10">
+    <div
+      ref={pageRef}
+      className="relative min-h-screen w-full overflow-hidden bg-paper px-5 py-6 md:px-8 lg:p-8"
+    >
+      <div className="relative mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-[1400px] flex-col overflow-hidden rounded-[28px] border border-hair bg-paper lg:flex-row lg:min-h-[calc(100svh-4rem)]">
+
+        {/* ============================================================
+            LEFT — RECOVERY PANEL
+            ============================================================ */}
+
+        <div className="forgot-brand relative flex shrink-0 flex-col justify-between overflow-hidden bg-ink px-8 py-8 text-paper md:px-12 md:py-12 lg:w-[46%] lg:px-14 lg:py-14">
+
+          <NetworkField className="pointer-events-auto absolute inset-0 opacity-60" />
+
           <div
-            className="pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 opacity-[0.05]"
             style={{
-              background:
-                "radial-gradient(120% 90% at 30% 10%, #f5f3ee 0%, #e7e4dc 45%, #cfccc3 80%, #b9b6ac 100%)",
+              backgroundImage:
+                "linear-gradient(rgba(245,243,238,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(245,243,238,.6) 1px, transparent 1px)",
+              backgroundSize: "42px 42px",
             }}
           />
-          <p className="relative font-mono-tech flex items-center gap-2 text-xs tracking-[0.14em] text-ink/50">
-            <SignalDot />
-            ACCOUNT RECOVERY
-          </p>
 
-          <h1
-            className="relative max-w-md font-sans font-semibold leading-[0.98] tracking-[-0.03em] text-ink"
-            style={{ fontSize: "clamp(1.6rem, 2.8vw, 2.4rem)" }}
-          >
-            Regain
-            <br />
-            <span className="text-signal">control.</span>
-          </h1>
+          <div
+            ref={scanRef}
+            className="pointer-events-none absolute inset-x-0 top-0 h-24 opacity-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, transparent, rgba(237,28,46,0.22), transparent)",
+            }}
+          />
 
-          <p className="relative hidden max-w-sm text-sm leading-[1.55] text-ink/60 md:block">
-            Securely recover access to your SAOM-AI workspace in
-            two verified steps.
-          </p>
+          <div className="relative z-10">
+            <Link to="/" className="inline-block">
+              <Wordmark tone="paper" />
+            </Link>
+          </div>
 
-          <div className="relative hidden flex-col gap-2 text-xs tracking-[0.16em] text-ink/45 lg:flex">
+          <div className="relative z-10 mt-16 lg:mt-0">
+            <p className="font-mono-tech mb-5 flex items-center gap-2 text-xs tracking-[0.14em] text-paper/50">
+              <SignalDot />
+              ACCOUNT RECOVERY
+            </p>
+
+            <h1
+              className="max-w-md font-sans font-semibold leading-[0.98] tracking-[-0.03em] text-paper"
+              style={{ fontSize: "clamp(2.4rem, 4.2vw, 3.6rem)" }}
+            >
+              Regain
+              <br />
+              <span className="text-signal">control.</span>
+            </h1>
+
+            <p className="mt-5 max-w-sm text-base leading-[1.55] text-paper/60">
+              Securely recover access to your SAOM-AI workspace in
+              two verified steps.
+            </p>
+          </div>
+
+          <div className="relative z-10 mt-14 flex flex-col gap-2 text-xs tracking-[0.16em] text-paper/40 lg:mt-0">
             <div className="flex items-center gap-3">
               <span className="h-px w-8 bg-signal" />
               <span className="font-mono-tech">RECOVERY · VERIFICATION · ACCESS</span>
             </div>
             <StatusTicker
               messages={FORGET_TICKER}
-              className="font-mono-tech pl-11 text-ink/55"
+              className="font-mono-tech pl-11 text-paper/55"
             />
           </div>
         </div>
 
-        {/* FORM */}
-        <div className="relative flex flex-1 items-center justify-center overflow-y-auto px-5 py-6 md:px-10 lg:px-12 lg:py-10">
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(120% 100% at 70% 0%, #f5f3ee 0%, #e7e4dc 50%, #cfccc3 100%)",
-            }}
-          />
-          <div className="relative w-full max-w-[420px]">
+        {/* ============================================================
+            RIGHT — FORM
+            ============================================================ */}
+
+        <div className="flex flex-1 items-center justify-center px-6 py-12 md:px-12 lg:px-16">
+          <div className="w-full max-w-[420px]">
             <AnimatePresence mode="wait">
+
               {/* ==================================================
                   EMAIL STEP
                   ================================================== */}
@@ -309,22 +466,22 @@ function Forget() {
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <p className="forgot-field font-mono-tech mb-3 text-xs tracking-[0.18em] text-signal">
+                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
                     ACCOUNT RECOVERY
                   </p>
 
-                  <h2 className="forgot-field font-sans text-2xl font-semibold tracking-[-0.02em] text-ink md:text-3xl">
+                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
                     Forgot password?
                   </h2>
 
-                  <p className="forgot-field mt-3 text-sm leading-relaxed text-ink/55">
+                  <p className="mt-3 text-sm leading-relaxed text-ink/55">
                     Enter the email associated with your account and
                     we'll send you a verification code.
                   </p>
 
-                  <form onSubmit={handleForgotPassword} className="mt-7 space-y-5">
+                  <form onSubmit={handleForgotPassword} className="mt-8 space-y-5">
                     <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-email" surface="light">Email</FieldLabel>
+                      <FieldLabel htmlFor="fp-email">Email</FieldLabel>
                       <input
                         id="fp-email"
                         type="email"
@@ -334,29 +491,19 @@ function Forget() {
                         autoComplete="email"
                         autoFocus
                         required
-                        className="w-full rounded-xl border border-ink/12 bg-paper/70 px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                        className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
                       />
                     </div>
 
-                    {error && (
-                      <StatusBanner tone="error" surface="light">
-                        {error}
-                      </StatusBanner>
-                    )}
-                    {message && (
-                      <StatusBanner tone="success" surface="light">
-                        {message}
-                      </StatusBanner>
-                    )}
+                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
+                    {message && <StatusBanner tone="success">{message}</StatusBanner>}
 
-                    <div className="forgot-field">
-                      <SubmitButton disabled={loading} surface="light">
-                        {loading ? "Sending code…" : "Send Reset Code"}
-                      </SubmitButton>
-                    </div>
+                    <SubmitButton disabled={loading}>
+                      {loading ? "Sending code…" : "Send Reset Code"}
+                    </SubmitButton>
                   </form>
 
-                  <p className="mt-6 text-center text-sm text-ink/55">
+                  <p className="mt-7 text-center text-sm text-ink/55">
                     Remember your password?{" "}
                     <Link to="/signin" className="text-ink">
                       <HoverInvert className="hover:!text-signal">Sign in</HoverInvert>
@@ -377,24 +524,24 @@ function Forget() {
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <p className="forgot-field font-mono-tech mb-3 text-xs tracking-[0.18em] text-signal">
+                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
                     RESET PASSWORD
                   </p>
 
-                  <h2 className="forgot-field font-sans text-2xl font-semibold tracking-[-0.02em] text-ink md:text-3xl">
+                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
                     Create a new password
                   </h2>
 
-                  <p className="forgot-field mt-3 text-sm text-ink/55">
+                  <p className="mt-3 text-sm text-ink/55">
                     Verification code sent to:
                   </p>
-                  <p className="forgot-field mt-1 break-all text-sm font-medium text-ink">
+                  <p className="mt-1 break-all text-sm font-medium text-ink">
                     {email}
                   </p>
 
-                  <form onSubmit={handleResetPassword} className="mt-6 space-y-5">
+                  <form onSubmit={handleResetPassword} className="mt-7 space-y-5">
                     <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-otp" surface="light">Verification code</FieldLabel>
+                      <FieldLabel htmlFor="fp-otp">Verification code</FieldLabel>
                       <input
                         id="fp-otp"
                         type="text"
@@ -405,7 +552,7 @@ function Forget() {
                         placeholder="000000"
                         autoFocus
                         required
-                        className="w-full rounded-xl border border-ink/15 bg-paper/70 px-4 py-4 text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                        className="w-full rounded-xl border border-ink/15 bg-paper px-4 py-4 text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
                         style={{
                           backgroundImage:
                             "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6))",
@@ -414,7 +561,7 @@ function Forget() {
                     </div>
 
                     <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-new" surface="light">New password</FieldLabel>
+                      <FieldLabel htmlFor="fp-new">New password</FieldLabel>
                       <div className="relative">
                         <input
                           id="fp-new"
@@ -424,7 +571,7 @@ function Forget() {
                           placeholder="New password"
                           autoComplete="new-password"
                           required
-                          className="w-full rounded-xl border border-ink/12 bg-paper/70 px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
                         />
                         <button
                           type="button"
@@ -437,7 +584,7 @@ function Forget() {
                     </div>
 
                     <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-confirm" surface="light">Confirm password</FieldLabel>
+                      <FieldLabel htmlFor="fp-confirm">Confirm password</FieldLabel>
                       <div className="relative">
                         <input
                           id="fp-confirm"
@@ -447,7 +594,7 @@ function Forget() {
                           placeholder="Confirm password"
                           autoComplete="new-password"
                           required
-                          className="w-full rounded-xl border border-ink/12 bg-paper/70 px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
                         />
                         <button
                           type="button"
@@ -459,28 +606,20 @@ function Forget() {
                       </div>
                     </div>
 
-                    <div className="forgot-field rounded-xl border border-ink/10 bg-ink/[0.03] p-4 text-xs">
+                    <div className="forgot-field rounded-xl border border-hair bg-ink/[0.02] p-4 text-xs">
                       <p className="mb-3 text-ink/45">Password requirements</p>
                       <div className="grid grid-cols-2 gap-2">
-                        <RequirementRow met={resetRequirements.length} surface="light">8+ characters</RequirementRow>
-                        <RequirementRow met={resetRequirements.uppercase} surface="light">Uppercase</RequirementRow>
-                        <RequirementRow met={resetRequirements.lowercase} surface="light">Lowercase</RequirementRow>
-                        <RequirementRow met={resetRequirements.number} surface="light">Number</RequirementRow>
+                        <RequirementRow met={resetRequirements.length}>8+ characters</RequirementRow>
+                        <RequirementRow met={resetRequirements.uppercase}>Uppercase</RequirementRow>
+                        <RequirementRow met={resetRequirements.lowercase}>Lowercase</RequirementRow>
+                        <RequirementRow met={resetRequirements.number}>Number</RequirementRow>
                       </div>
                     </div>
 
-                    {error && (
-                      <StatusBanner tone="error" surface="light">
-                        {error}
-                      </StatusBanner>
-                    )}
-                    {message && (
-                      <StatusBanner tone="success" surface="light">
-                        {message}
-                      </StatusBanner>
-                    )}
+                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
+                    {message && <StatusBanner tone="success">{message}</StatusBanner>}
 
-                    <SubmitButton disabled={loading} surface="light">
+                    <SubmitButton disabled={loading}>
                       {loading ? "Resetting…" : "Reset Password"}
                     </SubmitButton>
 
@@ -499,7 +638,7 @@ function Forget() {
           </div>
         </div>
       </div>
-    </AuthDoors>
+    </div>
   );
 }
 
