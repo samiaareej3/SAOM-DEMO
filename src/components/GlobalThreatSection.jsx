@@ -1,6 +1,14 @@
- import { useEffect, useRef, useState } from "react";
+  import { useEffect, useMemo, useRef, useState } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import {
+  geoGraticule10,
+  geoInterpolate,
+  geoOrthographic,
+  geoPath,
+} from "d3-geo";
+import { feature } from "topojson-client";
+import world from "world-atlas/countries-110m.json";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -22,768 +30,592 @@ const STATS = [
   },
 ];
 
-function CyberGlobe({ active }) {
-  const canvasRef = useRef(null);
-  const animationRef = useRef(null);
+/*
+  These are real geographic coordinates. The attack itself is a fictional
+  visualization of a threat moving through real locations.
+*/
+const LOCATIONS = [
+  { id: "new-york", city: "NEW YORK", country: "USA", lat: 40.7128, lon: -74.006 },
+  { id: "london", city: "LONDON", country: "UK", lat: 51.5072, lon: -0.1276 },
+  { id: "berlin", city: "BERLIN", country: "GERMANY", lat: 52.52, lon: 13.405 },
+  { id: "saopaulo", city: "SÃO PAULO", country: "BRAZIL", lat: -23.5505, lon: -46.6333 },
+  { id: "capetown", city: "CAPE TOWN", country: "SOUTH AFRICA", lat: -33.9249, lon: 18.4241 },
+  { id: "dubai", city: "DUBAI", country: "UAE", lat: 25.2048, lon: 55.2708 },
+  { id: "mumbai", city: "MUMBAI", country: "INDIA", lat: 19.076, lon: 72.8777 },
+  { id: "singapore", city: "SINGAPORE", country: "SINGAPORE", lat: 1.3521, lon: 103.8198 },
+  { id: "tokyo", city: "TOKYO", country: "JAPAN", lat: 35.6762, lon: 139.6503 },
+  { id: "sydney", city: "SYDNEY", country: "AUSTRALIA", lat: -33.8688, lon: 151.2093 },
+];
 
-  const rotationRef = useRef(0);
+const ATTACK_PATH = [
+  "new-york",
+  "london",
+  "berlin",
+  "dubai",
+  "mumbai",
+  "singapore",
+  "tokyo",
+];
 
-  const mouseRef = useRef({
-    x: 0,
-    y: 0,
-  });
+const locationMap = Object.fromEntries(LOCATIONS.map((location) => [location.id, location]));
 
-  const attackRef = useRef({
-    index: 0,
-    start: 0,
-    duration: 2800,
-  });
+/* Country ISO numeric codes used by Natural Earth / world-atlas. */
+const TARGET_COUNTRY_IDS = new Set([
+  "840", // USA
+  "826", // UK
+  "276", // Germany
+  "076", // Brazil
+  "710", // South Africa
+  "784", // UAE
+  "356", // India
+  "702", // Singapore
+  "392", // Japan
+  "036", // Australia
+]);
 
+function formatStat(format, value) {
+  if (format === "millions") return `${(value / 1000000).toFixed(1)}M`;
+  if (format === "seconds") return `${Math.round(value)}s`;
+  return Math.round(value).toString();
+}
+
+function RealWorldGlobe({ active }) {
+  const globeRef = useRef(null);
+  const [rotation, setRotation] = useState([8, -8, 0]);
+  const [attackIndex, setAttackIndex] = useState(0);
+  const [attackProgress, setAttackProgress] = useState(0);
+  const [hovered, setHovered] = useState(null);
+
+  const countries = useMemo(
+    () => feature(world, world.objects.countries).features,
+    []
+  );
+
+  const graticule = useMemo(() => geoGraticule10(), []);
+
+  /*
+    The projection is rebuilt from the current rotation. This gives us a
+    genuine geographic globe rather than hand-built continent polygons.
+  */
+  const projection = useMemo(() => {
+    return geoOrthographic()
+      .rotate([-rotation[0], -rotation[1], -rotation[2]])
+      .translate([50, 50])
+      .scale(46)
+      .clipAngle(90);
+  }, [rotation]);
+
+
+  // Dense, restrained intelligence points laid across the real globe.
+  // These create the illuminated-grid feeling from the reference without
+  // replacing the actual geography.
+  const path = useMemo(() => geoPath(projection), [projection]);
+
+  const projectedLocation = (location) => {
+    const point = projection([location.lon, location.lat]);
+    if (!point) return null;
+
+    const inverted = projection.invert(point);
+    if (!inverted) return null;
+
+    return {
+      x: point[0],
+      y: point[1],
+      visible: Math.abs(inverted[1] - location.lat) < 0.01,
+    };
+  };
+
+  /*
+    Keep the globe centered inside a viewBox. The 100x100 coordinate system
+    scales cleanly on desktop and mobile.
+  */
   useEffect(() => {
-    const canvas = canvasRef.current;
+    if (!active) return undefined;
 
-    if (!canvas) return;
+    let frame;
+    let last = performance.now();
+    let attackStart = performance.now();
 
-    const ctx = canvas.getContext("2d");
+    const tick = (now) => {
+      const dt = now - last;
+      last = now;
 
-    let width = 0;
-    let height = 0;
-
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-
-      width = rect.width;
-      height = rect.height;
-
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-
-    resize();
-
-    window.addEventListener("resize", resize);
-
-    /* =====================================================
-       GLOBAL LOCATIONS
-    ===================================================== */
-
-    const locations = [
-      { name: "NEW YORK", country: "USA", lat: 40.7, lon: -74 },
-      { name: "LONDON", country: "UK", lat: 51.5, lon: -0.1 },
-      { name: "BERLIN", country: "GERMANY", lat: 52.5, lon: 13.4 },
-      { name: "SÃO PAULO", country: "BRAZIL", lat: -23.5, lon: -46.6 },
-      { name: "CAPE TOWN", country: "SOUTH AFRICA", lat: -33.9, lon: 18.4 },
-      { name: "DUBAI", country: "UAE", lat: 25.2, lon: 55.3 },
-      { name: "MUMBAI", country: "INDIA", lat: 19, lon: 72.8 },
-      { name: "SINGAPORE", country: "SINGAPORE", lat: 1.35, lon: 103.8 },
-      { name: "TOKYO", country: "JAPAN", lat: 35.6, lon: 139.6 },
-      { name: "SYDNEY", country: "AUSTRALIA", lat: -33.8, lon: 151.2 },
-    ];
-
-    /* =====================================================
-       ATTACK SEQUENCE
-    ===================================================== */
-
-    const attackSequence = [0, 6, 8, 5, 3, 7, 1, 9, 4];
-
-    /* =====================================================
-       SURFACE DOTS (fibonacci sphere)
-    ===================================================== */
-
-    const surfacePoints = [];
-    const POINT_COUNT = 460;
-
-    for (let i = 0; i < POINT_COUNT; i++) {
-      const y = 1 - (i / (POINT_COUNT - 1)) * 2;
-      const radius = Math.sqrt(Math.max(0, 1 - y * y));
-      const theta = Math.PI * (3 - Math.sqrt(5)) * i;
-
-      surfacePoints.push({
-        x: Math.cos(theta) * radius,
-        y,
-        z: Math.sin(theta) * radius,
-      });
-    }
-
-    /* =====================================================
-       GOLD CYBER PARTICLES (shell just above the surface)
-    ===================================================== */
-
-    const cyberDots = [];
-
-    for (let i = 0; i < 190; i++) {
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const radius = 0.91 + Math.random() * 0.08;
-
-      cyberDots.push({
-        x: Math.sin(phi) * Math.cos(theta) * radius,
-        y: Math.cos(phi) * radius,
-        z: Math.sin(phi) * Math.sin(theta) * radius,
-        phase: Math.random() * Math.PI * 2,
-      });
-    }
-
-    /* =====================================================
-       DEEP-SPACE STARFIELD — ambient backdrop, always alive
-    ===================================================== */
-
-    const stars = Array.from({ length: 150 }, () => ({
-      x: Math.random(),
-      y: Math.random(),
-      r: 0.3 + Math.random() * 1.3,
-      baseAlpha: 0.15 + Math.random() * 0.45,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.0011 + Math.random() * 0.0016,
-      driftX: (Math.random() - 0.5) * 0.00003,
-      driftY: (Math.random() - 0.5) * 0.00003,
-    }));
-
-    /* =====================================================
-       METEOR STREAKS — rare, fast, theatrical
-    ===================================================== */
-
-    let meteor = null;
-    let nextMeteorAt = performance.now() + 1800 + Math.random() * 2600;
-
-    const maybeSpawnMeteor = (now) => {
-      if (meteor || now < nextMeteorAt) return;
-
-      meteor = {
-        x: Math.random() * width * 0.7,
-        y: -20,
-        vx: 2.6 + Math.random() * 1.6,
-        vy: 3.6 + Math.random() * 1.8,
-        life: 1,
-      };
-
-      nextMeteorAt = now + 3200 + Math.random() * 5200;
-    };
-
-    const drawMeteor = () => {
-      if (!meteor) return;
-
-      meteor.x += meteor.vx;
-      meteor.y += meteor.vy;
-      meteor.life -= 0.018;
-
-      if (meteor.life <= 0 || meteor.y > height + 40 || meteor.x > width + 40) {
-        meteor = null;
-        return;
+      if (dt > 0) {
+        setRotation((previous) => [
+          previous[0] + dt * 0.0032,
+          previous[1],
+          previous[2],
+        ]);
       }
 
-      const tailX = meteor.x - meteor.vx * 7;
-      const tailY = meteor.y - meteor.vy * 7;
+      const elapsed = now - attackStart;
+      const duration = 2800;
+      const progress = Math.min(1, elapsed / duration);
 
-      const trail = ctx.createLinearGradient(tailX, tailY, meteor.x, meteor.y);
-      trail.addColorStop(0, "rgba(255,235,190,0)");
-      trail.addColorStop(1, `rgba(255,235,190,${meteor.life * 0.9})`);
+      setAttackProgress(progress);
 
-      ctx.beginPath();
-      ctx.moveTo(tailX, tailY);
-      ctx.lineTo(meteor.x, meteor.y);
-      ctx.strokeStyle = trail;
-      ctx.lineWidth = 1.6;
-      ctx.shadowColor = "rgba(255,225,170,0.8)";
-      ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      ctx.beginPath();
-      ctx.arc(meteor.x, meteor.y, 1.6, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${meteor.life})`;
-      ctx.fill();
-    };
-
-    /* =====================================================
-       LOCATION CONVERSION
-    ===================================================== */
-
-    const locationTo3D = (location) => {
-      const lat = (location.lat * Math.PI) / 180;
-      const lon = (location.lon * Math.PI) / 180;
-
-      return {
-        x: Math.cos(lat) * Math.cos(lon),
-        y: Math.sin(lat),
-        z: Math.cos(lat) * Math.sin(lon),
-      };
-    };
-
-    const location3D = locations.map(locationTo3D);
-
-    /* =====================================================
-       PROJECT 3D
-    ===================================================== */
-
-    const project = (point, rotation, tiltX) => {
-      let x = point.x;
-      let y = point.y;
-      let z = point.z;
-
-      const cosR = Math.cos(rotation);
-      const sinR = Math.sin(rotation);
-
-      const rotatedX = x * cosR - z * sinR;
-      const rotatedZ = x * sinR + z * cosR;
-
-      x = rotatedX;
-      z = rotatedZ;
-
-      const cosT = Math.cos(tiltX);
-      const sinT = Math.sin(tiltX);
-
-      const rotatedY = y * cosT - z * sinT;
-      const rotatedZ2 = y * sinT + z * cosT;
-
-      y = rotatedY;
-      z = rotatedZ2;
-
-      const radius = Math.min(width, height) * 0.38;
-      const perspective = 1 / (1.65 - z * 0.3);
-
-      return {
-        x: width / 2 + x * radius * perspective,
-        y: height / 2 + y * radius * perspective,
-        z,
-        scale: perspective,
-      };
-    };
-
-    /* =====================================================
-       ATTACK RADAR
-    ===================================================== */
-
-    const drawAttack = (point, progress) => {
-      if (!point) return;
-
-      const maxRadius = 82;
-
-      for (let i = 0; i < 4; i++) {
-        const ringProgress = (progress + i * 0.16) % 1;
-        const radius = ringProgress * maxRadius;
-        const opacity = (1 - ringProgress) * 0.75;
-
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(237,28,46,${opacity})`;
-        ctx.lineWidth = i === 0 ? 2 : 1;
-        ctx.stroke();
+      if (progress >= 1) {
+        attackStart = now;
+        setAttackIndex((previous) => (previous + 1) % (ATTACK_PATH.length - 1));
       }
 
-      const glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, 46);
-      glow.addColorStop(0, "rgba(237,28,46,0.55)");
-      glow.addColorStop(0.25, "rgba(237,28,46,0.24)");
-      glow.addColorStop(1, "rgba(237,28,46,0)");
-
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 46, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#ed1c2e";
-      ctx.shadowColor = "rgba(237,28,46,0.95)";
-      ctx.shadowBlur = 22;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff";
-      ctx.fill();
+      frame = requestAnimationFrame(tick);
     };
 
-    /* =====================================================
-       MAIN DRAW LOOP
-    ===================================================== */
+    frame = requestAnimationFrame(tick);
 
-    const draw = () => {
-      const now = Date.now();
-      const perfNow = performance.now();
-
-      ctx.clearRect(0, 0, width, height);
-
-      const mouseX = mouseRef.current.x;
-      const mouseY = mouseRef.current.y;
-      const tiltX = mouseY * 0.12;
-
-      if (active) {
-        rotationRef.current += 0.0013;
-      }
-
-      const rotation = rotationRef.current;
-
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const globeRadius = Math.min(width, height) * 0.38;
-
-      /* =================================================
-         DEEP SPACE BACKDROP
-      ================================================= */
-
-      const backdrop = ctx.createRadialGradient(
-        centerX, centerY, 0,
-        centerX, centerY, Math.max(width, height) * 0.75
-      );
-      backdrop.addColorStop(0, "rgba(28,20,14,1)");
-      backdrop.addColorStop(0.55, "rgba(10,9,9,1)");
-      backdrop.addColorStop(1, "rgba(3,3,4,1)");
-      ctx.fillStyle = backdrop;
-      ctx.fillRect(0, 0, width, height);
-
-      /* =================================================
-         STARFIELD
-      ================================================= */
-
-      stars.forEach((star) => {
-        star.x += star.driftX;
-        star.y += star.driftY;
-        if (star.x < 0) star.x = 1;
-        if (star.x > 1) star.x = 0;
-        if (star.y < 0) star.y = 1;
-        if (star.y > 1) star.y = 0;
-
-        const twinkle = star.baseAlpha + Math.sin(now * star.speed + star.phase) * 0.25;
-
-        ctx.beginPath();
-        ctx.arc(star.x * width, star.y * height, star.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, twinkle)})`;
-        ctx.fill();
-      });
-
-      maybeSpawnMeteor(perfNow);
-      drawMeteor();
-
-      /* =================================================
-         CURSOR-REACTIVE LIGHT
-      ================================================= */
-
-      const cursorPX = centerX + mouseX * globeRadius * 1.15;
-      const cursorPY = centerY + mouseY * globeRadius * 1.15;
-
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      const cursorGlow = ctx.createRadialGradient(cursorPX, cursorPY, 0, cursorPX, cursorPY, globeRadius * 0.9);
-      cursorGlow.addColorStop(0, "rgba(255,205,120,0.16)");
-      cursorGlow.addColorStop(0.4, "rgba(237,28,46,0.06)");
-      cursorGlow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = cursorGlow;
-      ctx.beginPath();
-      ctx.arc(cursorPX, cursorPY, globeRadius * 0.9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      /* =================================================
-         BREATHING HALO RINGS — the globe's ambient pulse
-      ================================================= */
-
-      const breath = 1 + Math.sin(now * 0.0012) * 0.02;
-
-      for (let i = 0; i < 3; i++) {
-        const ringProgress = ((now * 0.00022) + i * 0.34) % 1;
-        const radius = globeRadius * (1.05 + ringProgress * 0.85) * breath;
-        const opacity = (1 - ringProgress) * 0.16;
-
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(199,149,27,${opacity})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-
-      /* =================================================
-         ATMOSPHERE — layered gold + red bloom
-      ================================================= */
-
-      const atmosphere = ctx.createRadialGradient(
-        centerX - globeRadius * 0.3, centerY - globeRadius * 0.35, 10,
-        centerX, centerY, globeRadius * 1.5 * breath
-      );
-      atmosphere.addColorStop(0, "rgba(255,205,110,0.32)");
-      atmosphere.addColorStop(0.28, "rgba(255,180,80,0.16)");
-      atmosphere.addColorStop(0.6, "rgba(237,28,46,0.09)");
-      atmosphere.addColorStop(1, "rgba(0,0,0,0)");
-
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.fillStyle = atmosphere;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, globeRadius * 1.5 * breath, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      /* =================================================
-         GLOBE BODY
-      ================================================= */
-
-      const globeGradient = ctx.createRadialGradient(
-        centerX - globeRadius * 0.32, centerY - globeRadius * 0.32, 10,
-        centerX, centerY, globeRadius
-      );
-      globeGradient.addColorStop(0, "rgba(92,74,44,0.55)");
-      globeGradient.addColorStop(0.4, "rgba(38,32,24,0.6)");
-      globeGradient.addColorStop(0.78, "rgba(14,12,10,0.78)");
-      globeGradient.addColorStop(1, "rgba(4,4,5,0.92)");
-
-      ctx.fillStyle = globeGradient;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, globeRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      /* =================================================
-         GOLDEN RIM LIGHT
-      ================================================= */
-
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, globeRadius * 1.015, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,205,110,0.7)";
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = "rgba(255,205,110,0.65)";
-      ctx.shadowBlur = 20;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      /* =================================================
-         GRID
-      ================================================= */
-
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
-      ctx.lineWidth = 0.7;
-
-      for (let i = 0; i < 11; i++) {
-        const angle = (Math.PI * i) / 10;
-
-        ctx.beginPath();
-        ctx.ellipse(0, 0, Math.abs(Math.cos(angle)) * globeRadius, globeRadius, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      for (let i = -4; i <= 4; i++) {
-        const lat = i / 5;
-        const radius = Math.sqrt(Math.max(0, 1 - lat * lat)) * globeRadius;
-
-        ctx.beginPath();
-        ctx.ellipse(0, lat * globeRadius, radius, radius * 0.2, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-
-      /* =================================================
-         SURFACE NETWORK
-      ================================================= */
-
-      surfacePoints.forEach((point) => {
-        const projected = project(point, rotation, tiltX);
-        if (projected.z < 0.08) return;
-
-        const size = 0.55 + projected.z * 0.9;
-        const opacity = 0.18 + projected.z * 0.42;
-
-        ctx.beginPath();
-        ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${opacity})`;
-        ctx.fill();
-      });
-
-      /* =================================================
-         GOLD PARTICLES
-      ================================================= */
-
-      cyberDots.forEach((point) => {
-        const projected = project(point, rotation, tiltX);
-        if (projected.z < 0.16) return;
-
-        const pulse = 0.6 + Math.sin(now * 0.002 + point.phase) * 0.35;
-
-        ctx.beginPath();
-        ctx.arc(projected.x, projected.y, 0.9, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,205,110,${pulse})`;
-        ctx.shadowColor = "rgba(255,205,110,0.75)";
-        ctx.shadowBlur = 6;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      });
-
-      /* =================================================
-         PROJECT LOCATIONS
-      ================================================= */
-
-      const projectedLocations = location3D.map((point) => project(point, rotation, tiltX));
-
-      /* =================================================
-         ATTACK TIMER
-      ================================================= */
-
-      if (!attackRef.current.start) {
-        attackRef.current.start = now;
-      }
-
-      let elapsed = now - attackRef.current.start;
-
-      if (elapsed > attackRef.current.duration) {
-        attackRef.current.index = (attackRef.current.index + 1) % attackSequence.length;
-        attackRef.current.start = now;
-        elapsed = 0;
-      }
-
-      const currentAttack = attackSequence[attackRef.current.index];
-      const progress = elapsed / attackRef.current.duration;
-
-      /* =================================================
-         STATIC GOLD CONNECTIONS
-      ================================================= */
-
-      const connections = [
-        [0, 1], [1, 2], [2, 6], [6, 7], [7, 8], [8, 9], [0, 3], [3, 4], [4, 5],
-      ];
-
-      connections.forEach(([aIndex, bIndex]) => {
-        const a = projectedLocations[aIndex];
-        const b = projectedLocations[bIndex];
-
-        if (a.z < 0.2 || b.z < 0.2) return;
-
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.strokeStyle = "rgba(255,205,110,0.28)";
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-      });
-
-      /* =================================================
-         ACTIVE THREAT + TRAVELING PACKET WITH FADING TRAIL
-      ================================================= */
-
-      const attackPoint = projectedLocations[currentAttack];
-
-      if (attackPoint && attackPoint.z > 0.15) {
-        drawAttack(attackPoint, progress);
-
-        const destinations = [1, 6, 7, 8];
-        const destinationIndex = destinations[attackRef.current.index % destinations.length];
-        const destination = projectedLocations[destinationIndex];
-
-        if (destination && destination.z > 0.15) {
-          const travel = Math.min(1, progress * 1.35);
-
-          const x = attackPoint.x + (destination.x - attackPoint.x) * travel;
-          const y = attackPoint.y + (destination.y - attackPoint.y) * travel;
-
-          ctx.beginPath();
-          ctx.moveTo(attackPoint.x, attackPoint.y);
-          ctx.lineTo(x, y);
-          ctx.strokeStyle = `rgba(237,28,46,${0.3 + travel * 0.55})`;
-          ctx.lineWidth = 1.5;
-          ctx.shadowColor = "rgba(237,28,46,0.7)";
-          ctx.shadowBlur = 9;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-
-          for (let k = 5; k >= 0; k--) {
-            const t = Math.max(0, travel - k * 0.045);
-            const tx = attackPoint.x + (destination.x - attackPoint.x) * t;
-            const ty = attackPoint.y + (destination.y - attackPoint.y) * t;
-            const a = (1 - k / 6) * 0.85;
-
-            ctx.beginPath();
-            ctx.arc(tx, ty, k === 0 ? 3.2 : 1.6, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(237,28,46,${a})`;
-            if (k === 0) {
-              ctx.shadowColor = "#ed1c2e";
-              ctx.shadowBlur = 16;
-            }
-            ctx.fill();
-            ctx.shadowBlur = 0;
-          }
-        }
-      }
-
-      /* =================================================
-         CITY NODES
-      ================================================= */
-
-      projectedLocations.forEach((point, index) => {
-        if (point.z < 0.18) return;
-
-        const activeThreat = index === currentAttack;
-
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, activeThreat ? 5 : 2.7, 0, Math.PI * 2);
-        ctx.fillStyle = activeThreat ? "#ed1c2e" : "#ffcd78";
-
-        ctx.shadowColor = activeThreat ? "rgba(237,28,46,0.95)" : "rgba(255,205,110,0.7)";
-        ctx.shadowBlur = activeThreat ? 18 : 6;
-
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      });
-
-      /* =================================================
-         CITY LABELS
-      ================================================= */
-
-      projectedLocations.forEach((point, index) => {
-        if (point.z < 0.48) return;
-
-        const location = locations[index];
-        const activeThreat = index === currentAttack;
-        const rightSide = point.x > centerX;
-        const offsetX = rightSide ? 19 : -19;
-        const offsetY = index % 2 === 0 ? -14 : 14;
-
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.x + offsetX * 0.6, point.y + offsetY * 0.6);
-        ctx.strokeStyle = activeThreat ? "rgba(237,28,46,0.85)" : "rgba(255,255,255,0.22)";
-        ctx.lineWidth = activeThreat ? 1.1 : 0.6;
-        ctx.stroke();
-
-        ctx.textAlign = rightSide ? "left" : "right";
-        ctx.font = "600 9px Arial, sans-serif";
-        ctx.fillStyle = activeThreat ? "#ed1c2e" : "rgba(255,255,255,0.86)";
-        ctx.fillText(location.name, point.x + offsetX, point.y + offsetY);
-
-        ctx.font = "7px Arial, sans-serif";
-        ctx.fillStyle = activeThreat ? "#ed1c2e" : "#ffcd78";
-        ctx.fillText(location.country, point.x + offsetX, point.y + offsetY + 10);
-      });
-
-      /* =================================================
-         LAYERED ORBITING RINGS
-      ================================================= */
-
-      const ringPulse = 0.75 + Math.sin(now * 0.0016) * 0.25;
-
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(now * 0.00008);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, globeRadius * 1.08, globeRadius * 0.28, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255,205,110,${0.42 * ringPulse})`;
-      ctx.lineWidth = 1;
-      ctx.shadowColor = "rgba(255,205,110,0.5)";
-      ctx.shadowBlur = 9;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-now * 0.000055);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, globeRadius * 1.22, globeRadius * 0.44, 0.4, 0, Math.PI * 2);
-      ctx.setLineDash([2, 6]);
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-now * 0.00013);
-      ctx.beginPath();
-      ctx.arc(0, 0, globeRadius * 1.1, -0.3, 0.2);
-      ctx.strokeStyle = "rgba(237,28,46,0.85)";
-      ctx.lineWidth = 2.4;
-      ctx.shadowColor = "rgba(237,28,46,0.7)";
-      ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-
-      /* =================================================
-         LOOP
-      ================================================= */
-
-      animationRef.current = requestAnimationFrame(draw);
-    };
-
-    draw();
-
-    /* =====================================================
-       MOUSE
-    ===================================================== */
-
-    const handlePointerMove = (event) => {
-      const rect = canvas.getBoundingClientRect();
-
-      mouseRef.current.x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
-      mouseRef.current.y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
-    };
-
-    const handlePointerLeave = () => {
-      mouseRef.current.x = 0;
-      mouseRef.current.y = 0;
-    };
-
-    canvas.addEventListener("pointermove", handlePointerMove);
-    canvas.addEventListener("pointerleave", handlePointerLeave);
-
-    return () => {
-      cancelAnimationFrame(animationRef.current);
-      window.removeEventListener("resize", resize);
-      canvas.removeEventListener("pointermove", handlePointerMove);
-      canvas.removeEventListener("pointerleave", handlePointerLeave);
-    };
+    return () => cancelAnimationFrame(frame);
   }, [active]);
+
+  const activeSource = locationMap[ATTACK_PATH[attackIndex]];
+  const activeTarget = locationMap[ATTACK_PATH[attackIndex + 1]];
+
+  const sourcePoint = activeSource ? projectedLocation(activeSource) : null;
+  const targetPoint = activeTarget ? projectedLocation(activeTarget) : null;
+
+  /*
+    Great-circle attack route. geoInterpolate follows the Earth's surface,
+    so the red route follows the real globe rather than a flat SVG line.
+  */
+  const attackPoints = useMemo(() => {
+    if (!activeSource || !activeTarget) return [];
+
+    const interpolate = geoInterpolate(
+      [activeSource.lon, activeSource.lat],
+      [activeTarget.lon, activeTarget.lat]
+    );
+
+    return Array.from({ length: 25 }, (_, index) => {
+      const point = projection(interpolate(index / 24));
+      return point;
+    });
+  }, [activeSource, activeTarget, projection]);
+
+  const visibleAttackPoints = attackPoints.filter(Boolean);
+
+  const attackPoint =
+    visibleAttackPoints.length > 0
+      ? visibleAttackPoints[
+          Math.min(
+            visibleAttackPoints.length - 1,
+            Math.floor(attackProgress * (visibleAttackPoints.length - 1))
+          )
+        ]
+      : null;
+
+  const targetIsVisible = targetPoint?.visible;
+  const sourceIsVisible = sourcePoint?.visible;
 
   return (
     <div
-      className="relative h-full w-full overflow-hidden rounded-[28px] border border-white/10"
-      style={{
-        background: "radial-gradient(120% 140% at 22% 12%, #1e1a14 0%, #100d0a 45%, #050505 100%)",
-        boxShadow: "0 0 0 1px rgba(255,205,110,0.06), 0 30px 80px -20px rgba(0,0,0,0.6)",
-      }}
+      ref={globeRef}
+      className="relative h-full w-full"
+      onMouseLeave={() => setHovered(null)}
     >
-      {/* faint scanline texture, matches the dark-chamber language used elsewhere */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[1] opacity-[0.045]"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(180deg, #fff 0px, #fff 1px, transparent 1px, transparent 3px)",
-        }}
-      />
+      <svg
+        viewBox="0 0 100 100"
+        className="h-full w-full overflow-visible"
+        role="img"
+        aria-label="Real-world global threat intelligence globe"
+      >
+        <defs>
+          <radialGradient id="globeLight" cx="45%" cy="38%" r="65%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+            <stop offset="65%" stopColor="#fff7f8" stopOpacity="0.96" />
+            <stop offset="100%" stopColor="#ffecef" stopOpacity="0.45" />
+          </radialGradient>
 
-      <canvas ref={canvasRef} className="relative z-[2] h-full w-full" />
+          <radialGradient id="countryGlow">
+            <stop offset="0%" stopColor="#e4002b" stopOpacity="0.42" />
+            <stop offset="70%" stopColor="#e4002b" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="#e4002b" stopOpacity="0" />
+          </radialGradient>
 
-      {/* LIVE INDICATOR */}
+          <filter id="softRedGlow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="1.4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
 
-      <div className="pointer-events-none absolute left-5 top-5 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 backdrop-blur">
+          <filter id="attackGlow" x="-200%" y="-200%" width="500%" height="500%">
+            <feGaussianBlur stdDeviation="1.8" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          <filter id="gridGlow" x="-300%" y="-300%" width="700%" height="700%">
+            <feGaussianBlur stdDeviation="0.55" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          <radialGradient id="sideLight">
+            <stop offset="0%" stopColor="#e4002b" stopOpacity="0.26" />
+            <stop offset="35%" stopColor="#e4002b" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="#e4002b" stopOpacity="0" />
+          </radialGradient>
+
+          <filter id="countryGlowFilter" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="0.75" result="blur" />
+            <feFlood floodColor="#e4002b" floodOpacity="0.48" />
+            <feComposite in2="blur" operator="in" />
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          <clipPath id="globeClip">
+            <circle cx="50" cy="50" r="46" />
+          </clipPath>
+        </defs>
+
+        {/* Soft page-blending atmosphere */}
+        <circle
+          cx="50"
+          cy="50"
+          r="49"
+          fill="url(#globeLight)"
+          opacity="0.76"
+        />
+
+        {/* Fine outer intelligence rings */}
+        <circle
+          cx="50"
+          cy="50"
+          r="47.8"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.10"
+          strokeWidth="0.25"
+        />
+        <circle
+          cx="50"
+          cy="50"
+          r="48.8"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.07"
+          strokeWidth="0.18"
+          strokeDasharray="1 2"
+        />
+
+        {/* Soft illuminated halos on the sides, inspired by the reference. */}
+        <circle
+          cx="4"
+          cy="38"
+          r="15"
+          fill="url(#sideLight)"
+          opacity="0.52"
+          filter="url(#softRedGlow)"
+        />
+        <circle
+          cx="96"
+          cy="58"
+          r="17"
+          fill="url(#sideLight)"
+          opacity="0.48"
+          filter="url(#softRedGlow)"
+        />
+
+        <g clipPath="url(#globeClip)">
+          {/* Actual geographic globe */}
+          <circle cx="50" cy="50" r="46" fill="url(#globeLight)" />
+
+          {/* Soft red depth wash: keeps the globe bright while giving the
+              actual countries enough contrast to read immediately. */}
+          <circle
+            cx="50"
+            cy="50"
+            r="45.6"
+            fill="none"
+            stroke="#8d1730"
+            strokeOpacity="0.07"
+            strokeWidth="2.2"
+          />
+
+          {/* Real latitude / longitude grid */}
+          <path
+            d={path(graticule)}
+            fill="none"
+            stroke="#e4002b"
+            strokeOpacity="0.18"
+            strokeWidth="0.20"
+            filter="url(#gridGlow)"
+          />
+
+          {/* Actual country boundaries from world-atlas */}
+          {countries.map((country) => {
+            const id = String(country.id).padStart(3, "0");
+            const isTargetCountry = TARGET_COUNTRY_IDS.has(id);
+
+            return (
+              <path
+                key={country.id}
+                d={path(country)}
+                fill={
+                  isTargetCountry
+                    ? "rgba(228,0,43,0.20)"
+                    : "rgba(85,20,30,0.10)"
+                }
+                stroke="#e4002b"
+                strokeOpacity={isTargetCountry ? 0.52 : 0.22}
+                strokeWidth={isTargetCountry ? 0.30 : 0.16}
+                style={{
+                  filter: isTargetCountry
+                    ? "drop-shadow(0 0 1.8px rgba(228,0,43,0.72))"
+                    : "none",
+                  opacity: isTargetCountry ? 0.94 : 0.72,
+                }}
+                className={isTargetCountry ? "country-glow" : undefined}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+
+          {/* Soft glow under monitored countries */}
+          {LOCATIONS.map((location) => {
+            const point = projectedLocation(location);
+            if (!point?.visible) return null;
+
+            return (
+              <circle
+                key={`glow-${location.id}`}
+                cx={point.x}
+                cy={point.y}
+                r="3.8"
+                fill="url(#countryGlow)"
+                opacity="0.28"
+              />
+            );
+          })}
+
+          {/* Active great-circle attack route */}
+          {visibleAttackPoints.length > 1 && (
+            <>
+              <polyline
+                points={visibleAttackPoints.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill="none"
+                stroke="#e4002b"
+                strokeOpacity="0.24"
+                strokeWidth="0.75"
+                filter="url(#softRedGlow)"
+              />
+
+              <polyline
+                points={visibleAttackPoints.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill="none"
+                stroke="#e4002b"
+                strokeOpacity="0.92"
+                strokeWidth="0.38"
+                filter="url(#softRedGlow)"
+              />
+            </>
+          )}
+
+          {/* Real locations */}
+          {LOCATIONS.map((location) => {
+            const point = projectedLocation(location);
+            if (!point?.visible) return null;
+
+            const isSource = location.id === activeSource?.id;
+            const isTarget = location.id === activeTarget?.id;
+            const isHovered = hovered === location.id;
+
+            return (
+              <g
+                key={location.id}
+                className="cursor-crosshair"
+                onMouseEnter={() => setHovered(location.id)}
+              >
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={isTarget ? 2.1 : isSource ? 1.5 : 0.85}
+                  fill={isTarget || isSource ? "#e4002b" : "#b9153c"}
+                  opacity={isTarget || isSource ? 1 : 0.75}
+                  filter={isTarget ? "url(#attackGlow)" : undefined}
+                />
+
+                {(isTarget || isSource || isHovered) && (
+                  <>
+                    <circle
+                      cx={point.x}
+                      cy={point.y}
+                      r={isTarget ? 4.2 : 2.8}
+                      fill="none"
+                      stroke="#e4002b"
+                      strokeOpacity={isTarget ? 0.38 : 0.20}
+                      strokeWidth="0.3"
+                    />
+
+                    <line
+                      x1={point.x}
+                      y1={point.y}
+                      x2={point.x + 3}
+                      y2={point.y - 2}
+                      stroke="#e4002b"
+                      strokeOpacity="0.48"
+                      strokeWidth="0.22"
+                    />
+
+                    <text
+                      x={point.x + 3.5}
+                      y={point.y - 2.3}
+                      fill="#4c1d29"
+                      fontSize="2.05"
+                      fontWeight="700"
+                      letterSpacing="0.04em"
+                    >
+                      {location.city}
+                    </text>
+
+                    <text
+                      x={point.x + 3.5}
+                      y={point.y + 0.1}
+                      fill="#e4002b"
+                      fillOpacity="0.72"
+                      fontSize="1.45"
+                      letterSpacing="0.05em"
+                    >
+                      {location.country}
+                    </text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Traveling attack packet */}
+          {attackPoint && sourceIsVisible && targetIsVisible && (
+            <>
+              <circle
+                cx={attackPoint[0]}
+                cy={attackPoint[1]}
+                r="2.6"
+                fill="url(#countryGlow)"
+                filter="url(#attackGlow)"
+              />
+
+              <circle
+                cx={attackPoint[0]}
+                cy={attackPoint[1]}
+                r="0.85"
+                fill="#e4002b"
+                filter="url(#attackGlow)"
+              />
+
+              <circle
+                cx={attackPoint[0]}
+                cy={attackPoint[1]}
+                r="1.9"
+                fill="none"
+                stroke="#e4002b"
+                strokeOpacity="0.38"
+                strokeWidth="0.28"
+              />
+            </>
+          )}
+        </g>
+
+        {/* Side intelligence arcs: the "lights on the sides" feeling from
+            the reference, kept subtle so the globe remains editorial. */}
+        <path
+          d="M 8 31 A 43 43 0 0 0 6 49"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.30"
+          strokeWidth="0.40"
+          strokeLinecap="round"
+          filter="url(#softRedGlow)"
+          className="globe-side-glow"
+        />
+        <path
+          d="M 92 66 A 43 43 0 0 0 94 48"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.34"
+          strokeWidth="0.48"
+          strokeLinecap="round"
+          filter="url(#softRedGlow)"
+          className="globe-side-glow globe-side-glow-delay"
+        />
+
+        {/* Globe rim */}
+        <circle
+          cx="50"
+          cy="50"
+          r="46"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.30"
+          strokeWidth="0.34"
+        />
+
+        {/* Small active scan arc */}
+        <path
+          d="M 82 23 A 37 37 0 0 1 92 42"
+          fill="none"
+          stroke="#e4002b"
+          strokeOpacity="0.62"
+          strokeWidth="0.55"
+          strokeLinecap="round"
+          filter="url(#softRedGlow)"
+        />
+      </svg>
+
+      {/* Minimal live status — no heavy card */}
+      <div className="pointer-events-none absolute left-[9%] top-[7%] flex items-center gap-2">
         <span className="relative flex h-2 w-2">
-          <span className="absolute h-full w-full animate-ping rounded-full bg-[#ed1c2e] opacity-50" />
-          <span className="relative h-2 w-2 rounded-full bg-[#ed1c2e]" />
+          <span className="absolute h-full w-full animate-ping rounded-full bg-[#e4002b] opacity-35" />
+          <span className="relative h-2 w-2 rounded-full bg-[#e4002b]" />
         </span>
-
-        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/75">
+        <span className="font-mono text-[8px] uppercase tracking-[0.18em] text-black/50">
           Live threat intelligence
         </span>
       </div>
 
-      {/* LEGEND */}
+      {/* Live threat feed — deliberately light so it feels editorial, not like a dashboard. */}
+      <div className="pointer-events-none absolute right-[4%] top-[7%] hidden w-[180px] rounded-2xl border border-[#e4002b]/10 bg-white/55 p-4 backdrop-blur-sm lg:block">
+        <p className="font-mono text-[8px] uppercase tracking-[0.22em] text-black/42">
+          Live threats
+        </p>
 
-      <div className="pointer-events-none absolute bottom-6 right-6 z-20 hidden items-center gap-5 font-mono text-[8px] uppercase tracking-[0.15em] text-white/55 lg:flex">
-        <span className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#ffcd78] shadow-[0_0_6px_#ffcd78]" />
-          Monitored
-        </span>
-
-        <span className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#ed1c2e] shadow-[0_0_6px_#ed1c2e]" />
-          Active threat
-        </span>
+        <div className="mt-3 space-y-2.5">
+          {[
+            ["Brute Force Attempt", "00:12"],
+            ["Malware Communication", "00:28"],
+            ["Suspicious Login", "00:41"],
+            ["DDoS Activity", "01:03"],
+            ["Data Exfiltration", "01:27"],
+          ].map(([label, time]) => (
+            <div key={label} className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#e4002b] shadow-[0_0_7px_rgba(228,0,43,0.7)]" />
+                <span className="truncate font-mono text-[8px] text-black/55">{label}</span>
+              </span>
+              <span className="font-mono text-[8px] text-black/35">{time}</span>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* Attack readout */}
+      {activeSource && activeTarget && (
+        <div className="pointer-events-none absolute bottom-[8%] left-[8%] font-mono text-[8px] uppercase tracking-[0.14em] text-black/45">
+          <span className="text-[#e4002b]">ACTIVE PATH</span>
+          <span className="mx-2">/</span>
+          {activeSource.country}
+          <span className="mx-1">→</span>
+          {activeTarget.country}
+        </div>
+      )}
     </div>
   );
 }
@@ -793,241 +625,121 @@ function CyberGlobe({ active }) {
 ========================================================= */
 
 export default function GlobalThreatSection() {
-  const sectionRef =
-    useRef(null);
+  const sectionRef = useRef(null);
+  const globeWrapRef = useRef(null);
 
-  const [statValues, setStatValues] =
-    useState(
-      STATS.map(() => 0)
-    );
-
-  const [globeActive, setGlobeActive] =
-    useState(false);
-
-  /* =======================================================
-     COUNT UP
-  ======================================================= */
+  const [statValues, setStatValues] = useState(STATS.map(() => 0));
+  const [globeActive, setGlobeActive] = useState(false);
 
   useEffect(() => {
-    if (!sectionRef.current)
-      return;
+    if (!sectionRef.current) return undefined;
 
     let tweens = [];
 
-    const ctx =
-      gsap.context(() => {
-        const startCount =
-          () => {
-            tweens.forEach(
-              (tween) =>
-                tween.kill()
-            );
+    const ctx = gsap.context(() => {
+      const startCount = () => {
+        tweens.forEach((tween) => tween.kill());
+        tweens = [];
 
-            tweens = [];
+        setGlobeActive(true);
 
-            setGlobeActive(true);
+        STATS.forEach((stat, index) => {
+          const counter = { value: 0 };
 
-            STATS.forEach(
-              (
-                stat,
-                index
-              ) => {
-                const counter = {
-                  value: 0,
-                };
+          const tween = gsap.to(counter, {
+            value: stat.value,
+            duration: 2.4,
+            delay: index * 0.15,
+            ease: "power3.out",
+            onUpdate: () => {
+              setStatValues((previous) => {
+                const next = [...previous];
+                next[index] = counter.value;
+                return next;
+              });
+            },
+            onComplete: () => {
+              setStatValues((previous) => {
+                const next = [...previous];
+                next[index] = stat.value;
+                return next;
+              });
+            },
+          });
 
-                const tween =
-                  gsap.to(
-                    counter,
-                    {
-                      value:
-                        stat.value,
-
-                      duration: 2.6,
-
-                      delay:
-                        index *
-                        0.15,
-
-                      ease:
-                        "power3.out",
-
-                      onUpdate:
-                        () => {
-                          setStatValues(
-                            (
-                              previous
-                            ) => {
-                              const next =
-                                [
-                                  ...previous,
-                                ];
-
-                              next[index] =
-                                counter.value;
-
-                              return next;
-                            }
-                          );
-                        },
-
-                      onComplete:
-                        () => {
-                          setStatValues(
-                            (
-                              previous
-                            ) => {
-                              const next =
-                                [
-                                  ...previous,
-                                ];
-
-                              next[index] =
-                                stat.value;
-
-                              return next;
-                            }
-                          );
-                        },
-                    }
-                  );
-
-                tweens.push(
-                  tween
-                );
-              }
-            );
-          };
-
-        ScrollTrigger.create({
-          trigger:
-            sectionRef.current,
-
-          start: "top 75%",
-
-          end: "bottom 20%",
-
-          onEnter:
-            startCount,
-
-          onEnterBack:
-            startCount,
-
-          onLeave: () =>
-            setGlobeActive(
-              false
-            ),
-
-          onLeaveBack: () =>
-            setGlobeActive(
-              false
-            ),
+          tweens.push(tween);
         });
-      }, sectionRef);
+      };
+
+      ScrollTrigger.create({
+        trigger: sectionRef.current,
+        start: "top 75%",
+        end: "bottom 20%",
+        onEnter: startCount,
+        onEnterBack: startCount,
+        onLeave: () => setGlobeActive(false),
+        onLeaveBack: () => setGlobeActive(false),
+      });
+    }, sectionRef);
 
     return () => {
-      tweens.forEach(
-        (tween) =>
-          tween.kill()
-      );
-
+      tweens.forEach((tween) => tween.kill());
       ctx.revert();
     };
   }, []);
 
-  /* =======================================================
-     SECTION REVEAL
-  ======================================================= */
-
   useEffect(() => {
-    if (!sectionRef.current)
-      return;
+    if (!sectionRef.current || !globeWrapRef.current) return undefined;
 
-    const ctx =
-      gsap.context(() => {
-        gsap.fromTo(
-          ".global-threat-copy",
-          {
-            opacity: 0,
-            y: 35,
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        ".global-threat-copy",
+        {
+          opacity: 0,
+          y: 30,
+        },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.95,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 78%",
           },
-          {
-            opacity: 1,
-            y: 0,
+        }
+      );
 
-            duration: 1,
-
-            ease: "power3.out",
-
-            scrollTrigger: {
-              trigger:
-                sectionRef.current,
-
-              start: "top 78%",
-            },
-          }
-        );
-
-        gsap.fromTo(
-          ".global-threat-globe",
-          {
-            opacity: 0,
-            scale: 0.88,
-            x: 45,
+      /*
+        The globe enters from the right, but the opacity and blur make it
+        feel like it is being revealed from the white page rather than
+        dropped into a box.
+      */
+      gsap.fromTo(
+        globeWrapRef.current,
+        {
+          opacity: 0,
+          x: -110,
+          scale: 0.92,
+          filter: "blur(12px)",
+        },
+        {
+          opacity: 1,
+          x: 0,
+          scale: 1,
+          filter: "blur(0px)",
+          duration: 1.45,
+          ease: "power4.out",
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 72%",
           },
-          {
-            opacity: 1,
-            scale: 1,
-            x: 0,
+        }
+      );
+    }, sectionRef);
 
-            duration: 1.4,
-
-            ease: "power3.out",
-
-            scrollTrigger: {
-              trigger:
-                sectionRef.current,
-
-              start: "top 75%",
-            },
-          }
-        );
-      }, sectionRef);
-
-    return () =>
-      ctx.revert();
+    return () => ctx.revert();
   }, []);
-
-  /* =======================================================
-     FORMAT
-  ======================================================= */
-
-  const formatStat = (
-    format,
-    value
-  ) => {
-    if (
-      format ===
-      "millions"
-    ) {
-      return `${(
-        value / 1000000
-      ).toFixed(1)}M`;
-    }
-
-    if (
-      format ===
-      "seconds"
-    ) {
-      return `${Math.round(
-        value
-      )}s`;
-    }
-
-    return Math.round(
-      value
-    ).toString();
-  };
 
   return (
     <section
@@ -1036,20 +748,15 @@ export default function GlobalThreatSection() {
       className="relative min-h-screen overflow-hidden bg-white text-black"
     >
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] items-center px-6 py-24 md:px-12 lg:px-16">
-        <div className="grid w-full grid-cols-1 items-center gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-0">
-
-          {/* =================================================
-              LEFT
-          ================================================= */}
-
+        <div className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:gap-0">
+          {/* LEFT */}
           <div className="global-threat-copy relative z-10 max-w-[650px]">
-
             <div className="mb-7 flex items-center gap-3">
-              <span className="font-mono text-xs tracking-[0.2em] text-[#ed1c2e]">
+              <span className="font-mono text-xs tracking-[0.2em] text-[#e4002b]">
                 08
               </span>
 
-              <span className="h-px w-8 bg-[#ed1c2e]" />
+              <span className="h-px w-8 bg-[#e4002b]" />
 
               <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-black/55">
                 Global Threat Intelligence
@@ -1059,106 +766,96 @@ export default function GlobalThreatSection() {
             <h2 className="max-w-[620px] text-[clamp(3.2rem,5.2vw,6.2rem)] font-semibold leading-[0.91] tracking-[-0.055em]">
               One environment.
               <br />
-
-              <span className="transition-colors duration-300 hover:text-[#ed1c2e]">
+              <span className="transition-colors duration-300 hover:text-[#e4002b]">
                 A world of context.
               </span>
             </h2>
 
             <p className="mt-8 max-w-[570px] text-[clamp(1.05rem,1.3vw,1.32rem)] leading-[1.55] tracking-[-0.015em] text-black/65">
-              Every incident SAOM AI
-              resolves sharpens the
-              picture for every
-              customer it protects.
-              Attack patterns
-              surfacing on one
-              network inform
-              detection on all of
-              them, within minutes.
+              Every incident SAOM AI resolves sharpens the picture for every
+              customer it protects. Attack patterns surfacing on one network
+              inform detection on all of them, within minutes.
             </p>
 
-            {/* =================================================
-                STATS
-            ================================================= */}
-
+            {/* STATS */}
             <div className="mt-12">
               <div className="mb-6 h-px w-full bg-black/15" />
 
               <div className="grid grid-cols-3">
-                {STATS.map(
-                  (
-                    stat,
-                    index
-                  ) => (
-                    <div
-                      key={
-                        stat.label
-                      }
-                      className="group cursor-default border-r border-black/10 px-5 first:pl-0 last:border-r-0 last:pr-0"
-                    >
-                      <div className="transition-transform duration-300 group-hover:-translate-y-1">
+                {STATS.map((stat, index) => (
+                  <div
+                    key={stat.label}
+                    className="group cursor-default border-r border-black/10 px-5 first:pl-0 last:border-r-0 last:pr-0"
+                  >
+                    <div className="transition-transform duration-300 group-hover:-translate-y-1">
+                      <p className="text-[clamp(2rem,3.4vw,3.6rem)] font-semibold leading-none tracking-[-0.055em] text-black transition-colors duration-300 group-hover:text-[#e4002b]">
+                        {formatStat(stat.format, statValues[index])}
+                      </p>
 
-                        <p className="text-[clamp(2rem,3.4vw,3.6rem)] font-semibold leading-none tracking-[-0.055em] text-black transition-colors duration-300 group-hover:text-[#ed1c2e]">
-                          {formatStat(
-                            stat.format,
-                            statValues[
-                              index
-                            ]
-                          )}
+                      <div className="mt-4 flex items-start gap-2">
+                        <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#e4002b]" />
+
+                        <p className="max-w-[140px] text-[10px] font-medium uppercase leading-[1.4] tracking-[0.08em] text-black/55">
+                          {stat.label}
                         </p>
-
-                        <div className="mt-4 flex items-start gap-2">
-                          <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#ed1c2e]" />
-
-                          <p className="max-w-[140px] text-[10px] font-medium uppercase leading-[1.4] tracking-[0.08em] text-black/55">
-                            {
-                              stat.label
-                            }
-                          </p>
-                        </div>
                       </div>
                     </div>
-                  )
-                )}
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* =================================================
-                STATUS
-            ================================================= */}
-
+            {/* STATUS */}
             <div className="mt-9 flex items-center gap-3">
               <span className="relative flex h-2 w-2">
-                <span className="absolute h-full w-full animate-ping rounded-full bg-[#ed1c2e] opacity-40" />
-
-                <span className="relative h-2 w-2 rounded-full bg-[#ed1c2e]" />
+                <span className="absolute h-full w-full animate-ping rounded-full bg-[#e4002b] opacity-40" />
+                <span className="relative h-2 w-2 rounded-full bg-[#e4002b]" />
               </span>
 
               <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-black/45">
-                Global intelligence
-                continuously
-                learning
+                Global intelligence continuously learning
               </span>
             </div>
           </div>
 
-          {/* =================================================
-              GLOBE
-          ================================================= */}
-
-          <div className="global-threat-globe relative h-[520px] w-full lg:h-[720px]">
-            <CyberGlobe
-              active={
-                globeActive
-              }
-            />
+          {/* REAL WORLD GLOBE */}
+          <div
+            ref={globeWrapRef}
+            className="global-threat-globe relative h-[520px] w-full lg:h-[720px]"
+          >
+            <RealWorldGlobe active={globeActive} />
           </div>
         </div>
       </div>
 
       <style>{`
-        #global-threat-intelligence canvas {
+        #global-threat-intelligence svg {
           display: block;
+          overflow: visible;
+        }
+
+        #global-threat-intelligence .country-glow {
+          animation: countryPulse 2.8s ease-in-out infinite;
+          transform-box: fill-box;
+          transform-origin: center;
+        }
+
+        @keyframes countryPulse {
+          0%, 100% { opacity: 0.72; }
+          50% { opacity: 1; }
+        }
+
+        #global-threat-intelligence .globe-side-glow {
+          animation: sideGlow 2.8s ease-in-out infinite;
+        }
+
+        #global-threat-intelligence .globe-side-glow-delay {
+          animation-delay: -1.35s;
+        }
+
+        @keyframes sideGlow {
+          0%, 100% { opacity: 0.28; }
+          50% { opacity: 0.82; }
         }
 
         @media (max-width: 768px) {

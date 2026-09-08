@@ -1,4 +1,4 @@
-import {
+ import {
   BrowserRouter,
   Routes,
   Route,
@@ -22,30 +22,24 @@ function AnimatedRoutes() {
         initial={{ opacity: 0, x: 48 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -48 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        transition={{
+          duration: 0.45,
+          ease: [0.22, 1, 0.36, 1],
+        }}
         className="min-h-screen"
       >
         <Routes location={location}>
-          <Route
-            path="/"
-            element={<Home />}
-          />
-
-          <Route
-            path="/signin"
-            element={<Signin />}
-          />
-
-          <Route
-            path="/signup"
-            element={<Signup />}
-          />
-
+          <Route path="/" element={<Home />} />
+          <Route path="/signin" element={<Signin />} />
+          <Route path="/signup" element={<Signup />} />
           <Route
             path="/forgot-password"
             element={<Forget />}
           />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route
+            path="/dashboard"
+            element={<Dashboard />}
+          />
         </Routes>
       </motion.div>
     </AnimatePresence>

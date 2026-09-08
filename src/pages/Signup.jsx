@@ -1,86 +1,152 @@
-import { useEffect, useRef, useState } from "react";
+ import { useState } from "react";
 import { Link } from "react-router-dom";
-import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
-import { gsap } from "gsap";
-import MagneticButton from "../components/MagneticButton.jsx";
-import HoverInvert from "../components/HoverInvert.jsx";
-import NetworkField from "../components/NetworkField.jsx";
+import { motion, AnimatePresence } from "framer-motion";
+ import NetworkField from "../components/NetworkField";
+/* ================================================================== */
+/* DESIGN TOKENS — white surfaces, one red accent, real contrast      */
+/* ================================================================== */
+const FONT_STACK =
+  "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-const SIGNUP_TICKER = ["IDENTITY FORMING", "CONTEXT LINKING", "VERIFICATION PENDING"];
+const COLORS = {
+  ink: "#1D1D1F",
+  inkSoft: "#6E6E73",
+  inkFaint: "#A1A1A6",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F5F5F7",
+  divider: "#E5E5EA",
+  red: "#E1102A",
+  redDark: "#B4001F",
+  redSoft: "#FDECEE",
+};
 
-/* Cycles short system-status lines. Purely decorative — carries no
-   auth state and never blocks or delays the real flow. */
-function StatusTicker({ messages, className = "" }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % messages.length);
-    }, 2600);
-    return () => clearInterval(id);
-  }, [messages.length]);
-
+/* ================================================================== */
+/* ICONS                                                               */
+/* ================================================================== */
+function GoogleIcon() {
   return (
-    <span className={`relative inline-block h-4 overflow-hidden ${className}`}>
-      <AnimatePresence mode="wait">
-        <motion.span
-          key={messages[index]}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute inset-0"
-        >
-          {messages[index]}
-        </motion.span>
-      </AnimatePresence>
-    </span>
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
+      <path fill="#4285F4" d="M21.35 12.23c0-.79-.07-1.55-.22-2.27H12v4.3h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.69 2.91-4.18 2.91-7.42z" />
+      <path fill="#34A853" d="M12 21.5c2.63 0 4.84-.87 6.45-2.35l-3.14-2.45c-.87.58-1.98.93-3.31.93-2.54 0-4.69-1.72-5.46-4.03H3.3v2.53A9.75 9.75 0 0 0 12 21.5z" />
+      <path fill="#FBBC05" d="M6.54 13.6A5.86 5.86 0 0 1 6.23 12c0-.56.1-1.1.31-1.6V7.87H3.3A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.13l3.24-2.53z" />
+      <path fill="#EA4335" d="M12 6.37c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.42 14.63 2.5 12 2.5a9.75 9.75 0 0 0-8.7 5.37l3.24 2.53C7.31 8.09 9.46 6.37 12 6.37z" />
+    </svg>
   );
 }
 
-/* ============================================================
-   LOCAL PRESENTATION HELPERS
-   ============================================================ */
-
-function Wordmark({ tone = "ink" }) {
+function CheckIcon() {
   return (
-    <span
-      className={`font-mono-tech text-sm tracking-[0.15em] ${
-        tone === "paper" ? "text-paper" : "text-ink"
-      }`}
+    <motion.svg
+      initial={{ scale: 0, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: "spring", stiffness: 500, damping: 22 }}
+      viewBox="0 0 10 10"
+      className="h-2.5 w-2.5"
     >
-      SAOM<span className="text-signal">.</span>AI
+      <path d="M1 5l2.5 2.5L9 2" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </motion.svg>
+  );
+}
+
+function IconLock(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+/* ================================================================== */
+/* PRIMITIVES                                                          */
+/* ================================================================== */
+function Wordmark() {
+  return (
+    <span className="text-[15px] font-semibold tracking-tight" style={{ color: COLORS.ink }}>
+      SAOM<span style={{ color: COLORS.red }}>.</span>AI
     </span>
   );
 }
 
-function SignalDot({ className = "" }) {
+const fieldMotion = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
+};
+
+const containerMotion = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+};
+
+function FloatingField({ id, label, type = "text", value, onChange, autoComplete, rightSlot }) {
   return (
-    <span className={`relative flex h-1.5 w-1.5 ${className}`}>
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal opacity-75" />
-      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-signal" />
-    </span>
+    <motion.div variants={fieldMotion} className="relative">
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        required
+        placeholder=" "
+        className="peer w-full border-b-2 bg-transparent pb-2 pt-6 text-[16px] outline-none transition-colors duration-300 placeholder-transparent"
+        style={{ color: COLORS.ink, borderColor: COLORS.divider }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = COLORS.red)}
+        onBlur={(e) => (e.currentTarget.style.borderColor = COLORS.divider)}
+      />
+      <label
+        htmlFor={id}
+        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[15px] transition-all duration-200
+          peer-focus:top-0 peer-focus:translate-y-0 peer-focus:text-xs
+          peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-xs"
+        style={{ color: COLORS.inkFaint }}
+      >
+        {label}
+      </label>
+      {rightSlot && <div className="absolute bottom-2 right-0 flex items-center">{rightSlot}</div>}
+    </motion.div>
   );
 }
 
-function FieldLabel({ htmlFor, children }) {
+function ShowHideButton({ shown, onClick }) {
   return (
-    <label htmlFor={htmlFor} className="mb-2 block text-sm text-ink/70">
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[13px] font-medium transition-colors"
+      style={{ color: COLORS.inkFaint }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.red)}
+      onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.inkFaint)}
+    >
+      {shown ? "Hide" : "Show"}
+    </button>
+  );
+}
+
+function Requirement({ met, children }) {
+  return (
+    <div className="flex items-center gap-2 text-[13px]" style={{ color: met ? COLORS.ink : COLORS.inkFaint }}>
+      <motion.span
+        animate={{ backgroundColor: met ? COLORS.red : "rgba(0,0,0,0)", borderColor: met ? COLORS.red : COLORS.divider }}
+        transition={{ duration: 0.25 }}
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px]"
+      >
+        <AnimatePresence>{met && <CheckIcon />}</AnimatePresence>
+      </motion.span>
       {children}
-    </label>
+    </div>
   );
 }
 
 function StatusBanner({ tone = "error", children }) {
-  const styles =
-    tone === "error"
-      ? "border-signal/25 bg-signal/[0.06] text-[#b3001f]"
-      : "border-ink/15 bg-ink/[0.04] text-ink/80";
+  const bg = tone === "error" ? COLORS.redSoft : COLORS.surfaceSoft;
+  const text = tone === "error" ? COLORS.redDark : COLORS.ink;
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-lg border px-4 py-3 text-sm ${styles}`}
+      className="rounded-xl px-4 py-3 text-[13px] leading-relaxed"
+      style={{ backgroundColor: bg, color: text }}
       role="status"
     >
       {children}
@@ -88,65 +154,83 @@ function StatusBanner({ tone = "error", children }) {
   );
 }
 
-function SubmitButton({ children, disabled, className = "" }) {
-  const ref = useRef(null);
-  const x = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
-  const y = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
-
-  function handleMove(e) {
-    const rect = ref.current.getBoundingClientRect();
-    x.set((e.clientX - rect.left - rect.width / 2) * 0.35);
-    y.set((e.clientY - rect.top - rect.height / 2) * 0.35);
-  }
-  function handleLeave() {
-    x.set(0);
-    y.set(0);
-  }
-
+function PrimaryButton({ children, disabled }) {
   return (
     <motion.button
-      ref={ref}
       type="submit"
       disabled={disabled}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      style={{ x, y }}
-      className={`group relative inline-flex w-full items-center justify-center gap-3 border border-ink bg-ink px-7 py-3.5 text-sm font-medium tracking-wide text-paper transition-colors duration-500 ease-signal hover:border-signal hover:bg-signal disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-ink disabled:hover:bg-ink ${className}`}
+      whileHover={disabled ? {} : { y: -1 }}
+      whileTap={disabled ? {} : { scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className="w-full rounded-full px-7 py-3.5 text-[15px] font-medium text-white shadow-sm transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ backgroundColor: COLORS.red, ["--tw-ring-color"]: COLORS.red }}
     >
       {children}
     </motion.button>
   );
 }
 
-function RequirementRow({ met, children }) {
+function GoogleButton({ onClick, disabled, children }) {
   return (
-    <span className={met ? "text-emerald-600" : "text-ink/35"}>
-      {met ? "✓" : "○"} {children}
-    </span>
+    <motion.button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      whileHover={disabled ? {} : { y: -1 }}
+      whileTap={disabled ? {} : { scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className="flex w-full items-center justify-center gap-3 rounded-full border px-7 py-3.5 text-[15px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ borderColor: COLORS.divider, color: COLORS.ink }}
+    >
+      {children}
+    </motion.button>
   );
 }
 
-/* ============================================================
-   SIGN UP
-   ============================================================ */
+function TrustNote({ children }) {
+  return (
+    <motion.div
+      variants={fieldMotion}
+      className="flex items-center justify-center gap-2 text-[12.5px]"
+      style={{ color: COLORS.inkFaint }}
+    >
+      <IconLock className="h-3.5 w-3.5 shrink-0" />
+      {children}
+    </motion.div>
+  );
+}
 
+/* ================================================================== */
+/* HERO PANEL — red gradient ground, live NetworkField graph, headline */
+/* ================================================================== */
+function HeroPanel({ eyebrow, headline, subhead }) {
+  return (
+    <div
+      className="relative hidden overflow-hidden lg:flex lg:w-[42%] lg:items-center lg:justify-center"
+      style={{ background: "linear-gradient(135deg, #FF3B4E 0%, #E1102A 45%, #7A0014 100%)" }}
+    >
+      <NetworkField className="absolute inset-0 h-full w-full" />
+
+      <div className="pointer-events-none relative z-10 flex flex-col items-center px-14 text-center text-white">
+        <p className="mb-3 text-[15px] font-medium text-white/70">{eyebrow}</p>
+        <h1 className="text-[40px] font-semibold leading-[1.1] tracking-tight">{headline}</h1>
+        <p className="mt-4 max-w-sm text-[16px] leading-relaxed text-white/80">{subhead}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* SIGNUP                                                              */
+/* ================================================================== */
 function Signup() {
-  const pageRef = useRef(null);
-  const scanRef = useRef(null);
-
-  // ============================================================
-  // STATE — UNCHANGED
-  // ============================================================
-
   const [step, setStep] = useState("signup");
 
   const [fullName, setFullName] = useState("");
   const [organization, setOrganization] = useState("");
   const [email, setEmail] = useState("");
-
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
   const [otp, setOtp] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
@@ -156,53 +240,6 @@ function Signup() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  // ============================================================
-  // GSAP
-  // IMPORTANT:
-  // GSAP DOES NOT CONTROL THE MAIN CARD OPACITY.
-  // FRAMER MOTION CONTROLS THE CARD.
-  // ============================================================
-
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.from(".signup-brand", {
-        opacity: 0,
-        x: -24,
-        duration: 0.8,
-        delay: 0.1,
-        ease: "power3.out",
-      });
-
-      gsap.from(".signup-field", {
-        opacity: 0,
-        y: 14,
-        duration: 0.5,
-        stagger: 0.07,
-        delay: 0.3,
-        ease: "power2.out",
-      });
-
-      gsap.fromTo(
-        scanRef.current,
-        { yPercent: -20, opacity: 0 },
-        {
-          yPercent: 120,
-          opacity: 1,
-          duration: 3.2,
-          repeat: -1,
-          repeatDelay: 1.4,
-          ease: "power1.inOut",
-        }
-      );
-    }, pageRef);
-
-    return () => ctx.revert();
-  }, []);
-
-  // ============================================================
-  // PASSWORD VALIDATION — UNCHANGED
-  // ============================================================
-
   const passwordRequirements = {
     length: password.length >= 8,
     uppercase: /[A-Z]/.test(password),
@@ -210,337 +247,158 @@ function Signup() {
     number: /[0-9]/.test(password),
   };
 
-  const passwordValid =
-    passwordRequirements.length &&
-    passwordRequirements.uppercase &&
-    passwordRequirements.lowercase &&
-    passwordRequirements.number;
-
-  // ============================================================
-  // REGISTER — UNCHANGED
-  // ============================================================
+  const passwordValid = Object.values(passwordRequirements).every(Boolean);
 
   const handleRegister = async (e) => {
     e.preventDefault();
-
     setError("");
     setMessage("");
 
-    if (
-      !fullName.trim() ||
-      !organization.trim() ||
-      !email.trim() ||
-      !password ||
-      !confirmPassword
-    ) {
+    if (!fullName.trim() || !organization.trim() || !email.trim() || !password || !confirmPassword) {
       setError("Please fill in all fields.");
       return;
     }
-
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
-
     if (!passwordValid) {
-      setError(
-        "Password must be at least 8 characters and contain uppercase, lowercase, and a number."
-      );
+      setError("Password must be at least 8 characters and contain uppercase, lowercase, and a number.");
       return;
     }
 
     try {
       setLoading(true);
 
-      // --------------------------------------------------------
-      // REGISTER
-      // --------------------------------------------------------
-
-      const registerResponse = await fetch(
-        "http://localhost:5000/api/auth/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            full_name: fullName.trim(),
-            organization: organization.trim(),
-            email: email.trim(),
-            password,
-          }),
-        }
-      );
-
+      const registerResponse = await fetch("http://localhost:5000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: fullName.trim(),
+          organization: organization.trim(),
+          email: email.trim(),
+          password,
+        }),
+      });
       const registerData = await registerResponse.json();
-
       if (!registerResponse.ok) {
-        throw new Error(
-          registerData.message ||
-            "Unable to create account."
-        );
+        throw new Error(registerData.message || "Unable to create account.");
       }
 
-      // --------------------------------------------------------
-      // SEND OTP
-      // --------------------------------------------------------
-
-      const otpResponse = await fetch(
-        "http://localhost:5000/api/auth/send-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-          }),
-        }
-      );
-
+      const otpResponse = await fetch("http://localhost:5000/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
       const otpData = await otpResponse.json();
-
       if (!otpResponse.ok) {
-        throw new Error(
-          otpData.message ||
-            "Unable to send verification code."
-        );
+        throw new Error(otpData.message || "Unable to send verification code.");
       }
 
-      setMessage(
-        "Verification code sent to your email."
-      );
-
+      setMessage("Verification code sent to your email.");
       setStep("otp");
     } catch (err) {
-      setError(
-        err.message ||
-          "Something went wrong while creating your account."
-      );
+      setError(err.message || "Something went wrong while creating your account.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================================
-  // VERIFY OTP — UNCHANGED
-  // ============================================================
-
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-
     setError("");
     setMessage("");
 
     if (otp.length !== 6) {
-      setError(
-        "Please enter the 6-digit verification code."
-      );
+      setError("Please enter the 6-digit verification code.");
       return;
     }
 
     try {
       setLoading(true);
 
-      // --------------------------------------------------------
-      // VERIFY OTP
-      // --------------------------------------------------------
-
-      const verifyResponse = await fetch(
-        "http://localhost:5000/api/auth/verify-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-            otp,
-          }),
-        }
-      );
-
+      const verifyResponse = await fetch("http://localhost:5000/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), otp }),
+      });
       const verifyData = await verifyResponse.json();
-
       if (!verifyResponse.ok) {
-        throw new Error(
-          verifyData.message ||
-            "Invalid verification code."
-        );
+        throw new Error(verifyData.message || "Invalid verification code.");
       }
 
-      setMessage(
-        "Email verified. Signing you in..."
-      );
+      setMessage("Email verified. Signing you in...");
 
-      // --------------------------------------------------------
-      // AUTOMATIC LOGIN
-      // --------------------------------------------------------
-
-      const loginResponse = await fetch(
-        "http://localhost:5000/api/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-          }),
-        }
-      );
-
+      const loginResponse = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
       const loginData = await loginResponse.json();
-
       if (!loginResponse.ok) {
-        throw new Error(
-          loginData.message ||
-            "Email verified, but automatic login failed."
-        );
+        throw new Error(loginData.message || "Email verified, but automatic login failed.");
       }
 
-      // --------------------------------------------------------
-      // SAVE AUTH DATA
-      // --------------------------------------------------------
-
-      localStorage.setItem(
-        "saom_token",
-        loginData.token
-      );
-
-      localStorage.setItem(
-        "saom_user",
-        JSON.stringify(loginData.user)
-      );
-
-      // --------------------------------------------------------
-      // REDIRECT
-      // --------------------------------------------------------
+      localStorage.setItem("saom_token", loginData.token);
+      localStorage.setItem("saom_user", JSON.stringify(loginData.user));
 
       setTimeout(() => {
         window.location.href = "/dashboard";
       }, 700);
     } catch (err) {
-      setError(
-        err.message ||
-          "Verification failed."
-      );
+      setError(err.message || "Verification failed.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================================
-  // GOOGLE AUTH — UNCHANGED
-  // ============================================================
-
   const handleGoogleAuth = () => {
     if (!window.google?.accounts?.oauth2) {
-      setError(
-        "Google authentication is still loading. Please try again."
-      );
+      setError("Google authentication is still loading. Please try again.");
       return;
     }
-
-    const clientId =
-      import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) {
-      setError(
-        "Google authentication is not configured."
-      );
+      setError("Google authentication is not configured.");
       return;
     }
 
     setError("");
     setMessage("");
 
-    const tokenClient =
-      window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-
-        scope: "openid email profile",
-
-        callback: async (tokenResponse) => {
-          try {
-            if (!tokenResponse?.access_token) {
-              throw new Error(
-                "Google authentication was cancelled."
-              );
-            }
-
-            setLoading(true);
-
-            // --------------------------------------------------
-            // SEND GOOGLE ACCESS TOKEN TO BACKEND
-            // --------------------------------------------------
-
-            const googleResponse = await fetch(
-              "http://localhost:5000/api/auth/google-access-token",
-              {
-                method: "POST",
-
-                headers: {
-                  "Content-Type": "application/json",
-                },
-
-                body: JSON.stringify({
-                  accessToken:
-                    tokenResponse.access_token,
-                }),
-              }
-            );
-
-            const data =
-              await googleResponse.json();
-
-            if (!googleResponse.ok) {
-              throw new Error(
-                data.message ||
-                  "Google authentication failed."
-              );
-            }
-
-            // --------------------------------------------------
-            // SAVE AUTH DATA
-            // --------------------------------------------------
-
-            localStorage.setItem(
-              "saom_token",
-              data.token
-            );
-
-            localStorage.setItem(
-              "saom_user",
-              JSON.stringify(data.user)
-            );
-
-            // --------------------------------------------------
-            // REDIRECT
-            // --------------------------------------------------
-
-            window.location.href =
-              "/dashboard";
-          } catch (err) {
-            setError(
-              err.message ||
-                "Unable to authenticate with Google."
-            );
-          } finally {
-            setLoading(false);
+    const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "openid email profile",
+      callback: async (tokenResponse) => {
+        try {
+          if (!tokenResponse?.access_token) {
+            throw new Error("Google authentication was cancelled.");
           }
-        },
-      });
+          setLoading(true);
 
-    tokenClient.requestAccessToken({
-      prompt: "select_account",
+          const googleResponse = await fetch("http://localhost:5000/api/auth/google-access-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accessToken: tokenResponse.access_token }),
+          });
+          const data = await googleResponse.json();
+          if (!googleResponse.ok) {
+            throw new Error(data.message || "Google authentication failed.");
+          }
+
+          localStorage.setItem("saom_token", data.token);
+          localStorage.setItem("saom_user", JSON.stringify(data.user));
+          window.location.href = "/dashboard";
+        } catch (err) {
+          setError(err.message || "Unable to authenticate with Google.");
+        } finally {
+          setLoading(false);
+        }
+      },
     });
-  };
 
-  // ============================================================
-  // GO BACK TO SIGNUP — UNCHANGED
-  // ============================================================
+    tokenClient.requestAccessToken({ prompt: "select_account" });
+  };
 
   const handleBackToSignup = () => {
     setStep("signup");
@@ -549,273 +407,135 @@ function Signup() {
     setMessage("");
   };
 
-  // ============================================================
-  // UI
-  // ============================================================
-
   return (
-    <div
-      ref={pageRef}
-      className="relative min-h-screen w-full overflow-hidden bg-paper px-5 py-6 md:px-8 lg:p-8"
-    >
-      <div className="relative mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-[1400px] flex-col overflow-hidden rounded-[28px] border border-hair bg-paper lg:flex-row lg:min-h-[calc(100svh-4rem)]">
+    <div className="flex min-h-screen w-full" style={{ fontFamily: FONT_STACK, backgroundColor: COLORS.surface }}>
+      {/* FORM COLUMN */}
+      <div className="relative flex w-full flex-col overflow-hidden lg:w-[58%]">
+        <div
+          className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full opacity-[0.06] blur-3xl"
+          style={{ background: COLORS.red }}
+        />
 
-        {/* ============================================================
-            LEFT — IDENTITY PANEL
-            ============================================================ */}
-
-        <div className="signup-brand relative flex shrink-0 flex-col justify-between overflow-hidden bg-ink px-8 py-8 text-paper md:px-12 md:py-12 lg:w-[46%] lg:px-14 lg:py-14">
-
-          <NetworkField className="pointer-events-auto absolute inset-0 opacity-60" />
-
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.05]"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(245,243,238,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(245,243,238,.6) 1px, transparent 1px)",
-              backgroundSize: "42px 42px",
-            }}
-          />
-
-          <div
-            ref={scanRef}
-            className="pointer-events-none absolute inset-x-0 top-0 h-24 opacity-0"
-            style={{
-              background:
-                "linear-gradient(to bottom, transparent, rgba(237,28,46,0.22), transparent)",
-            }}
-          />
-
-          <div className="relative z-10">
-            <Link to="/" className="inline-block">
-              <Wordmark tone="paper" />
-            </Link>
-          </div>
-
-          <div className="relative z-10 mt-16 lg:mt-0">
-            <p className="font-mono-tech mb-5 flex items-center gap-2 text-xs tracking-[0.14em] text-paper/50">
-              <SignalDot />
-              IDENTITY VERIFICATION
-            </p>
-
-            <h1
-              className="max-w-md font-sans font-semibold leading-[0.98] tracking-[-0.03em] text-paper"
-              style={{ fontSize: "clamp(2.2rem, 3.8vw, 3.3rem)" }}
-            >
-              Initialize your
-              <br />
-              <span className="text-signal">SAOM-AI identity.</span>
-            </h1>
-
-            <p className="mt-5 max-w-sm text-base leading-[1.55] text-paper/60">
-              Create your workspace and give SAOM-AI the context it
-              needs to start watching your environment.
-            </p>
-          </div>
-
-          <div className="relative z-10 mt-14 flex flex-col gap-2 text-xs tracking-[0.16em] text-paper/40 lg:mt-0">
-            <div className="flex items-center gap-3">
-              <span className="h-px w-8 bg-signal" />
-              <span className="font-mono-tech">IDENTITY · VERIFICATION · ACCESS</span>
-            </div>
-            <StatusTicker
-              messages={SIGNUP_TICKER}
-              className="font-mono-tech pl-11 text-paper/55"
-            />
-          </div>
+        <div className="relative z-10 px-6 py-6 lg:px-14 lg:py-8">
+          <Link to="/">
+            <Wordmark />
+          </Link>
         </div>
 
-        {/* ============================================================
-            RIGHT — FORM
-            ============================================================ */}
-
-        <div className="flex flex-1 items-center justify-center px-6 py-12 md:px-12 lg:px-16">
-          <div className="w-full max-w-[440px]">
+        <div className="relative z-10 flex flex-1 items-center justify-center px-6 pb-16 pt-4 lg:px-14">
+          <div className="w-full max-w-[400px]">
             <AnimatePresence mode="wait">
-
-              {/* ==================================================
-                  SIGNUP FORM
-                  ================================================== */}
-
               {step === "signup" && (
                 <motion.div
                   key="signup"
-                  initial={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0, x: 16 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
+                  exit={{ opacity: 0, x: -16 }}
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
-                    CREATE ACCOUNT
-                  </p>
+                  <motion.div variants={containerMotion} initial="hidden" animate="visible">
+                    <motion.h2
+                      variants={fieldMotion}
+                      className="text-[32px] font-semibold tracking-tight md:text-[36px]"
+                      style={{ color: COLORS.ink }}
+                    >
+                      Create your account
+                    </motion.h2>
+                    <motion.p variants={fieldMotion} className="mt-2 text-[15px]" style={{ color: COLORS.inkSoft }}>
+                      Set up your SAOM-AI workspace.
+                    </motion.p>
 
-                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
-                    Get started
-                  </h2>
-
-                  <p className="mt-2 text-sm leading-relaxed text-ink/55">
-                    Create your SAOM-AI account.
-                  </p>
-
-                  <form onSubmit={handleRegister} className="mt-8 space-y-4">
-                    <div className="signup-field">
-                      <FieldLabel htmlFor="su-name">Full name</FieldLabel>
-                      <input
-                        id="su-name"
-                        type="text"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="John Doe"
-                        autoComplete="name"
-                        required
-                        className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                    <form onSubmit={handleRegister} className="mt-9 space-y-6">
+                      <FloatingField id="su-name" label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" />
+                      <FloatingField id="su-org" label="Organization" value={organization} onChange={(e) => setOrganization(e.target.value)} autoComplete="organization" />
+                      <FloatingField id="su-email" label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+                      <FloatingField
+                        id="su-password"
+                        label="Password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="new-password"
+                        rightSlot={<ShowHideButton shown={showPassword} onClick={() => setShowPassword((v) => !v)} />}
                       />
-                    </div>
-
-                    <div className="signup-field">
-                      <FieldLabel htmlFor="su-org">Organization</FieldLabel>
-                      <input
-                        id="su-org"
-                        type="text"
-                        value={organization}
-                        onChange={(e) => setOrganization(e.target.value)}
-                        placeholder="Your organization"
-                        autoComplete="organization"
-                        required
-                        className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
+                      <FloatingField
+                        id="su-confirm"
+                        label="Confirm password"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        rightSlot={<ShowHideButton shown={showConfirmPassword} onClick={() => setShowConfirmPassword((v) => !v)} />}
                       />
+
+                      <motion.div
+                        variants={fieldMotion}
+                        className="grid grid-cols-2 gap-x-6 gap-y-2.5 rounded-xl px-4 py-4"
+                        style={{ backgroundColor: COLORS.surfaceSoft }}
+                      >
+                        <Requirement met={passwordRequirements.length}>8+ characters</Requirement>
+                        <Requirement met={passwordRequirements.uppercase}>Uppercase letter</Requirement>
+                        <Requirement met={passwordRequirements.lowercase}>Lowercase letter</Requirement>
+                        <Requirement met={passwordRequirements.number}>A number</Requirement>
+                      </motion.div>
+
+                      <AnimatePresence>{error && <StatusBanner key="err">{error}</StatusBanner>}</AnimatePresence>
+
+                      <motion.div variants={fieldMotion}>
+                        <PrimaryButton disabled={loading}>
+                          {loading ? "Creating account…" : "Create account"}
+                        </PrimaryButton>
+                      </motion.div>
+                    </form>
+
+                    <motion.div variants={fieldMotion} className="my-7 flex items-center gap-4">
+                      <div className="h-px flex-1" style={{ backgroundColor: COLORS.divider }} />
+                      <span className="text-[13px]" style={{ color: COLORS.inkFaint }}>
+                        or
+                      </span>
+                      <div className="h-px flex-1" style={{ backgroundColor: COLORS.divider }} />
+                    </motion.div>
+
+                    <motion.div variants={fieldMotion}>
+                      <GoogleButton onClick={loading ? undefined : handleGoogleAuth} disabled={loading}>
+                        <GoogleIcon />
+                        {loading ? "Please wait…" : "Continue with Google"}
+                      </GoogleButton>
+                    </motion.div>
+
+                    <div className="mt-6">
+                      <TrustNote>Your information is encrypted in transit and at rest.</TrustNote>
                     </div>
 
-                    <div className="signup-field">
-                      <FieldLabel htmlFor="su-email">Email</FieldLabel>
-                      <input
-                        id="su-email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@company.com"
-                        autoComplete="email"
-                        required
-                        className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                      />
-                    </div>
-
-                    <div className="signup-field">
-                      <FieldLabel htmlFor="su-password">Password</FieldLabel>
-                      <div className="relative">
-                        <input
-                          id="su-password"
-                          type={showPassword ? "text" : "password"}
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Create a password"
-                          autoComplete="new-password"
-                          required
-                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink/45 transition-colors hover:text-signal"
-                        >
-                          {showPassword ? "Hide" : "Show"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="signup-field">
-                      <FieldLabel htmlFor="su-confirm">Confirm password</FieldLabel>
-                      <div className="relative">
-                        <input
-                          id="su-confirm"
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="Confirm your password"
-                          autoComplete="new-password"
-                          required
-                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink/45 transition-colors hover:text-signal"
-                        >
-                          {showConfirmPassword ? "Hide" : "Show"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="signup-field rounded-xl border border-hair bg-ink/[0.02] p-4 text-xs">
-                      <p className="mb-3 text-ink/45">Password requirements</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <RequirementRow met={passwordRequirements.length}>8+ characters</RequirementRow>
-                        <RequirementRow met={passwordRequirements.uppercase}>Uppercase</RequirementRow>
-                        <RequirementRow met={passwordRequirements.lowercase}>Lowercase</RequirementRow>
-                        <RequirementRow met={passwordRequirements.number}>Number</RequirementRow>
-                      </div>
-                    </div>
-
-                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
-
-                    <SubmitButton disabled={loading}>
-                      {loading ? "Creating account…" : "Create Account"}
-                    </SubmitButton>
-                  </form>
-
-                  <div className="my-6 flex items-center gap-4">
-                    <div className="h-px flex-1 bg-hair" />
-                    <span className="font-mono-tech text-[11px] tracking-[0.14em] text-ink/35">OR</span>
-                    <div className="h-px flex-1 bg-hair" />
-                  </div>
-
-                  <MagneticButton
-                    variant="light"
-                    onClick={loading ? undefined : handleGoogleAuth}
-                    className={`!w-full !justify-center${
-                      loading ? " !pointer-events-none !opacity-50" : ""
-                    }`}
-                  >
-                    Continue with Google
-                  </MagneticButton>
-
-                  <p className="mt-7 text-center text-sm text-ink/55">
-                    Already have an account?{" "}
-                    <Link to="/signin" className="text-ink">
-                      <HoverInvert className="hover:!text-signal">Sign in</HoverInvert>
-                    </Link>
-                  </p>
+                    <motion.p variants={fieldMotion} className="mt-6 text-center text-[14px]" style={{ color: COLORS.inkSoft }}>
+                      Already have an account?{" "}
+                      <Link to="/signin" className="font-medium" style={{ color: COLORS.red }}>
+                        Sign in
+                      </Link>
+                    </motion.p>
+                  </motion.div>
                 </motion.div>
               )}
-
-              {/* ==================================================
-                  OTP
-                  ================================================== */}
 
               {step === "otp" && (
                 <motion.div
                   key="otp"
-                  initial={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0, x: 16 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
+                  exit={{ opacity: 0, x: -16 }}
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
-                    EMAIL VERIFICATION
-                  </p>
-
-                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
+                  <h2 className="text-[32px] font-semibold tracking-tight md:text-[36px]" style={{ color: COLORS.ink }}>
                     Verify your email
                   </h2>
-
-                  <p className="mt-3 text-sm text-ink/55">
-                    Enter the 6-digit code sent to:
+                  <p className="mt-3 text-[15px]" style={{ color: COLORS.inkSoft }}>
+                    Enter the 6-digit code sent to
                   </p>
-                  <p className="mt-1 break-all text-sm font-medium text-ink">
+                  <p className="mt-1 break-all text-[15px] font-medium" style={{ color: COLORS.ink }}>
                     {email}
                   </p>
 
-                  <form onSubmit={handleVerifyOtp} className="mt-7 space-y-5">
+                  <form onSubmit={handleVerifyOtp} className="mt-8 space-y-5">
                     <input
                       type="text"
                       inputMode="numeric"
@@ -825,25 +545,25 @@ function Signup() {
                       placeholder="000000"
                       autoFocus
                       required
-                      className="w-full rounded-xl border border-ink/15 bg-paper px-4 py-4 text-center text-3xl tracking-[0.6em] text-ink outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                      style={{
-                        backgroundImage:
-                          "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6))",
-                      }}
+                      className="w-full rounded-xl px-4 py-4 text-center text-[28px] tracking-[0.5em] outline-none transition-colors duration-300"
+                      style={{ color: COLORS.ink, backgroundColor: COLORS.surfaceSoft, border: `2px solid ${COLORS.divider}` }}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = COLORS.red)}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = COLORS.divider)}
                     />
 
-                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
-                    {message && <StatusBanner tone="success">{message}</StatusBanner>}
+                    <AnimatePresence>
+                      {error && <StatusBanner key="err">{error}</StatusBanner>}
+                      {message && <StatusBanner key="msg" tone="info">{message}</StatusBanner>}
+                    </AnimatePresence>
 
-                    <SubmitButton disabled={loading}>
-                      {loading ? "Verifying…" : "Verify Email"}
-                    </SubmitButton>
+                    <PrimaryButton disabled={loading}>{loading ? "Verifying…" : "Verify email"}</PrimaryButton>
 
                     <button
                       type="button"
                       onClick={handleBackToSignup}
                       disabled={loading}
-                      className="w-full text-sm text-ink/50 transition-colors hover:text-ink disabled:opacity-50"
+                      className="w-full text-[14px] transition-colors disabled:opacity-50"
+                      style={{ color: COLORS.inkSoft }}
                     >
                       ← Back
                     </button>
@@ -854,6 +574,12 @@ function Signup() {
           </div>
         </div>
       </div>
+
+      <HeroPanel
+        eyebrow="Identity & access"
+        headline="Create your workspace."
+        subhead="Give SAOM-AI the context it needs to understand your environment, in a few minutes."
+      />
     </div>
   );
 }

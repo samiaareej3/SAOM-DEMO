@@ -1,175 +1,63 @@
-//  import { useEffect, useState } from 'react'
-// import { motion } from 'framer-motion'
-// import MagneticButton from './MagneticButton.jsx'
-// import HoverInvert from './HoverInvert.jsx'
-
-// const LINKS = [
-//   { label: 'Platform', href: '#difference' },
-//   { label: 'How It Works', href: '#story' },
-//   { label: 'Threat Intelligence', href: '#global' },
-//   { label: 'About', href: '#compare' },
-// ]
-
-// export default function Navbar() {
-//   const [scrolled, setScrolled] = useState(false)
-//   const [hovered, setHovered] = useState(null)
-// const [registerHovered, setRegisterHovered] = useState(false)
-
-//   useEffect(() => {
-//     const onScroll = () => setScrolled(window.scrollY > 40)
-
-//     window.addEventListener('scroll', onScroll, { passive: true })
-
-//     return () => window.removeEventListener('scroll', onScroll)
-//   }, [])
-
-//   return (
-//     <motion.header
-//       initial={{ y: -20, opacity: 0 }}
-//       animate={{ y: 0, opacity: 1 }}
-//       transition={{
-//         duration: 0.8,
-//         ease: [0.22, 1, 0.36, 1],
-//       }}
-//       className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-10 transition-all duration-500 ease-signal ${
-//         scrolled
-//           ? 'py-3 bg-paper/85 backdrop-blur-md border-b border-hair'
-//           : 'py-6 bg-transparent'
-//       }`}
-//     >
-
-//       {/* LOGO */}
-//       <a
-//         href="#top"
-//         className="font-mono-tech text-sm tracking-[0.15em]"
-//       >
-//         SAOM<span className="text-signal">.</span>AI
-//       </a>
-
-
-//       {/* NAVIGATION */}
-//       <nav className="hidden md:flex items-center gap-8">
-
-//         {LINKS.map((l) => (
-//           <a
-//             key={l.label}
-//             href={l.href}
-//             className="relative py-2 text-sm text-ink/80"
-//             onMouseEnter={() => setHovered(l.label)}
-//             onMouseLeave={() => setHovered(null)}
-//           >
-//             <HoverInvert>
-//               {l.label}
-//             </HoverInvert>
-
-//             {/* RED UNDERLINE */}
-//             <span
-//               style={{
-//                 position: 'absolute',
-//                 left: 0,
-//                 bottom: 0,
-//                 width: '100%',
-//                 height: '2px',
-//                 backgroundColor: '#ff5b5b',
-//                 transform:
-//                   hovered === l.label
-//                     ? 'scaleX(1)'
-//                     : 'scaleX(0)',
-//                 transformOrigin: 'left',
-//                 transition: 'transform 0.3s ease',
-//               }}
-//             />
-//           </a>
-//         ))}
-
-//       </nav>
-
-
-//       {/* AUTH BUTTONS */}
-//       <div className="flex items-center gap-6">
-
-//         {/* SIGN IN */}
-//         <a
-//           href="#sign-in"
-//           className="relative hidden py-2 text-sm text-ink/80 md:inline-block"
-//           onMouseEnter={() => setHovered('Sign In')}
-//           onMouseLeave={() => setHovered(null)}
-//         >
-//           <HoverInvert>
-//             Sign In
-//           </HoverInvert>
-
-//           <span
-//             style={{
-//               position: 'absolute',
-//               left: 0,
-//               bottom: 0,
-//               width: '100%',
-//               height: '2px',
-//               backgroundColor: '#ff5b5b',
-//               transform:
-//                 hovered === 'Sign In'
-//                   ? 'scaleX(1)'
-//                   : 'scaleX(0)',
-//               transformOrigin: 'left',
-//               transition: 'transform 0.3s ease',
-//             }}
-//           />
-//         </a>
-
-
-//         {/* REGISTER */}
-//          <div
-//   onMouseEnter={() => setRegisterHovered(true)}
-//   onMouseLeave={() => setRegisterHovered(false)}
-//   style={{
-//     transition: 'all 0.3s ease',
-//   }}
-// >
-//    <MagneticButton
-//   className="!px-5 !py-2.5 !text-xs"
-//   style={{
-//     color: registerHovered ? '#ff3b30' : undefined,
-//     backgroundColor: registerHovered ? '#000000' : undefined,
-//     borderColor: registerHovered ? '#000000' : undefined,
-//     transition: 'all 0.3s ease',
-//   }}
-//   onMouseEnter={() => setRegisterHovered(true)}
-//   onMouseLeave={() => setRegisterHovered(false)}
-// >
-//   Register
-// </MagneticButton>
-// </div>
-//       </div>
-
-//     </motion.header>
-//   )
-// }
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import MagneticButton from './MagneticButton.jsx'
-import HoverInvert from './HoverInvert.jsx'
+ import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 
 const LINKS = [
-  { label: 'Platform', href: '#difference' },
-  { label: 'How It Works', href: '#story' },
-  { label: 'Threat Intelligence', href: '#global' },
-  { label: 'About', href: '#compare' },
-]
+  { label: "Problem", href: "#problem" },
+  { label: "Signal", href: "#difference" },
+  { label: "Investigation", href: "#story" },
+  { label: "Threat Intelligence", href: "#global-threat-intelligence" },
+];
 
 export default function Navbar() {
-  const [scrolled, setScrolled] = useState(false)
-  const [hovered, setHovered] = useState(null)
-  const [registerHovered, setRegisterHovered] = useState(false)
+  const [scrolled, setScrolled] = useState(false);
+  const [hovered, setHovered] = useState(null);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40)
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
 
-    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
 
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  const scrollToSection = (event, href) => {
+    event.preventDefault();
+
+    const section = document.querySelector(href);
+
+    if (!section) {
+      console.warn(`Section ${href} not found`);
+      return;
+    }
+
+    const navbarHeight = 80;
+
+    const target =
+      section.getBoundingClientRect().top +
+      window.scrollY -
+      navbarHeight;
+
+    window.scrollTo({
+      top: target,
+      behavior: "smooth",
+    });
+  };
+
+  const goHome = (event) => {
+    event.preventDefault();
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
 
   return (
     <motion.header
@@ -179,155 +67,94 @@ export default function Navbar() {
         duration: 0.8,
         ease: [0.22, 1, 0.36, 1],
       }}
-      className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-10 transition-all duration-500 ease-signal ${
+      className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-10 transition-all duration-500 ${
         scrolled
-          ? 'py-3 bg-paper/85 backdrop-blur-md border-b border-hair'
-          : 'py-6 bg-transparent'
+          ? "py-3 bg-paper/85 backdrop-blur-md border-b border-hair"
+          : "py-6 bg-transparent"
       }`}
     >
 
-      {/* =====================================================
-          LOGO
-          ===================================================== */}
-
+      {/* LOGO */}
       <a
         href="#top"
+        onClick={goHome}
         className="font-mono-tech text-sm tracking-[0.15em]"
       >
         SAOM<span className="text-signal">.</span>AI
       </a>
 
-
-      {/* =====================================================
-          NAVIGATION
-          ===================================================== */}
-
+      {/* NAVIGATION */}
       <nav className="hidden md:flex items-center gap-8">
-
-        {LINKS.map((l) => (
+        {LINKS.map((link) => (
           <a
-            key={l.label}
-            href={l.href}
+            key={link.label}
+            href={link.href}
+            onClick={(event) =>
+              scrollToSection(event, link.href)
+            }
+            onMouseEnter={() =>
+              setHovered(link.label)
+            }
+            onMouseLeave={() =>
+              setHovered(null)
+            }
             className="relative py-2 text-sm text-ink/80"
-            onMouseEnter={() => setHovered(l.label)}
-            onMouseLeave={() => setHovered(null)}
           >
-            <HoverInvert>
-              {l.label}
-            </HoverInvert>
-
-            {/* RED UNDERLINE */}
+            {link.label}
 
             <span
+              className="absolute left-0 bottom-0 w-full h-[2px] transition-transform duration-300"
               style={{
-                position: 'absolute',
-                left: 0,
-                bottom: 0,
-                width: '100%',
-                height: '2px',
-                backgroundColor: '#ff5b5b',
+                backgroundColor: "#ff5b5b",
                 transform:
-                  hovered === l.label
-                    ? 'scaleX(1)'
-                    : 'scaleX(0)',
-                transformOrigin: 'left',
-                transition: 'transform 0.3s ease',
+                  hovered === link.label
+                    ? "scaleX(1)"
+                    : "scaleX(0)",
+                transformOrigin: "left",
               }}
             />
           </a>
         ))}
-
       </nav>
 
-
-      {/* =====================================================
-          AUTH BUTTONS
-          ===================================================== */}
-
+      {/* AUTH */}
       <div className="flex items-center gap-6">
 
-        {/* ===================================================
-            SIGN IN
-            =================================================== */}
-
+        {/* SIGN IN */}
         <Link
           to="/signin"
+          onMouseEnter={() =>
+            setHovered("Sign In")
+          }
+          onMouseLeave={() =>
+            setHovered(null)
+          }
           className="relative hidden py-2 text-sm text-ink/80 md:inline-block"
-          onMouseEnter={() => setHovered('Sign In')}
-          onMouseLeave={() => setHovered(null)}
         >
-          <HoverInvert>
-            Sign In
-          </HoverInvert>
+          Sign In
 
           <span
+            className="absolute left-0 bottom-0 w-full h-[2px] transition-transform duration-300"
             style={{
-              position: 'absolute',
-              left: 0,
-              bottom: 0,
-              width: '100%',
-              height: '2px',
-              backgroundColor: '#ff5b5b',
+              backgroundColor: "#ff5b5b",
               transform:
-                hovered === 'Sign In'
-                  ? 'scaleX(1)'
-                  : 'scaleX(0)',
-              transformOrigin: 'left',
-              transition: 'transform 0.3s ease',
+                hovered === "Sign In"
+                  ? "scaleX(1)"
+                  : "scaleX(0)",
+              transformOrigin: "left",
             }}
           />
         </Link>
 
-
-        {/* ===================================================
-            REGISTER
-            =================================================== */}
-
-        <div
-          onMouseEnter={() => setRegisterHovered(true)}
-          onMouseLeave={() => setRegisterHovered(false)}
-          style={{
-            transition: 'all 0.3s ease',
-          }}
+        {/* REGISTER */}
+        <Link
+          to="/signup"
+          className="border border-ink px-5 py-2.5 text-xs font-mono-tech transition-all duration-300 hover:bg-ink hover:text-paper"
         >
-
-          <MagneticButton
-            className="!px-5 !py-2.5 !text-xs"
-            style={{
-              color: registerHovered
-                ? '#ff3b30'
-                : undefined,
-
-              backgroundColor: registerHovered
-                ? '#000000'
-                : undefined,
-
-              borderColor: registerHovered
-                ? '#000000'
-                : undefined,
-
-              transition: 'all 0.3s ease',
-            }}
-
-            onMouseEnter={() =>
-              setRegisterHovered(true)
-            }
-
-            onMouseLeave={() =>
-              setRegisterHovered(false)
-            }
-
-            onClick={() => {
-              window.location.href = '/signup'
-            }}
-          >
-            Register
-          </MagneticButton>
-
-        </div>
+          Register
+        </Link>
 
       </div>
-
     </motion.header>
-  )
+  );
 }

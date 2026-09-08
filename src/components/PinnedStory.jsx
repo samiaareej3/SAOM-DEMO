@@ -1,4 +1,4 @@
- import { useEffect, useRef } from 'react'
+   import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { motion, useReducedMotion } from 'framer-motion'
@@ -104,6 +104,10 @@ export default function PinnedStory() {
   const responsePanelRef = useRef(null)
   const actionRefs = useRef([])
   const checkRefs = useRef([])
+
+  // Small analyst cursor for the investigation canvas.
+  const analystCursorRef = useRef(null)
+  const analystRingRef = useRef(null)
 
   const prefersReducedMotion = useReducedMotion()
 
@@ -229,6 +233,54 @@ export default function PinnedStory() {
     }, sectionRef)
 
     return () => ctx.revert()
+  }, [prefersReducedMotion])
+
+  // --- analyst cursor interaction ------------------------------------------
+  // Keeps the pinned story feeling like an active investigation without
+  // adding another dashboard or decorative graph layer.
+  useEffect(() => {
+    if (prefersReducedMotion) return undefined
+
+    const canvas = document.querySelector('.pinned-story-canvas')
+    const cursor = analystCursorRef.current
+    const ring = analystRingRef.current
+    if (!canvas || !cursor || !ring) return undefined
+
+    const isTouch = window.matchMedia('(hover: none), (pointer: coarse)').matches
+    if (isTouch) return undefined
+
+    const moveX = gsap.quickTo(cursor, 'x', { duration: 0.25, ease: 'power3.out' })
+    const moveY = gsap.quickTo(cursor, 'y', { duration: 0.25, ease: 'power3.out' })
+    const ringX = gsap.quickTo(ring, 'x', { duration: 0.45, ease: 'power3.out' })
+    const ringY = gsap.quickTo(ring, 'y', { duration: 0.45, ease: 'power3.out' })
+    const scaleRing = gsap.quickTo(ring, 'scale', { duration: 0.3, ease: 'power2.out' })
+
+    const handleMove = (event) => {
+      const rect = canvas.getBoundingClientRect()
+      moveX(event.clientX - rect.left)
+      moveY(event.clientY - rect.top)
+      ringX(event.clientX - rect.left)
+      ringY(event.clientY - rect.top)
+    }
+
+    const handleEnter = () => {
+      gsap.to([cursor, ring], { autoAlpha: 1, duration: 0.2 })
+      scaleRing(1)
+    }
+
+    const handleLeave = () => {
+      gsap.to([cursor, ring], { autoAlpha: 0, duration: 0.2 })
+    }
+
+    canvas.addEventListener('mousemove', handleMove)
+    canvas.addEventListener('mouseenter', handleEnter)
+    canvas.addEventListener('mouseleave', handleLeave)
+
+    return () => {
+      canvas.removeEventListener('mousemove', handleMove)
+      canvas.removeEventListener('mouseenter', handleEnter)
+      canvas.removeEventListener('mouseleave', handleLeave)
+    }
   }, [prefersReducedMotion])
 
   const graphContent = (
@@ -421,22 +473,57 @@ export default function PinnedStory() {
         SAOM AI detects a signal, investigates the connections, understands the attack, and responds.
       </h2>
 
+      {/* LIVE TELEMETRY STRIP */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 px-6 md:px-10">
+        <div className="mx-auto grid w-full max-w-[1400px] grid-cols-2 border-b border-paper/10 py-4 md:grid-cols-4">
+          <div className="flex items-center gap-2 border-paper/10 py-1 md:border-r md:px-5 md:first:pl-0">
+            <span className="relative flex h-1.5 w-1.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal opacity-50" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-signal" />
+            </span>
+            <span className="font-mono-tech text-[9px] uppercase tracking-[0.16em] text-paper/55">
+              Live system
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between border-paper/10 py-1 md:border-r md:px-5">
+            <span className="font-mono-tech text-[9px] uppercase tracking-[0.16em] text-paper/35">
+              Events / 24h
+            </span>
+            <span className="font-mono-tech text-[10px] text-paper/70">
+              18,492
+            </span>
+          </div>
+
+          <div className="hidden items-center justify-between border-paper/10 py-1 md:flex md:border-r md:px-5">
+            <span className="font-mono-tech text-[9px] uppercase tracking-[0.16em] text-paper/35">
+              Systems watched
+            </span>
+            <span className="font-mono-tech text-[10px] text-paper/70">
+              1,842
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between py-1 md:px-5 md:pr-0">
+            <span className="font-mono-tech text-[9px] uppercase tracking-[0.16em] text-paper/35">
+              Status
+            </span>
+            <span className="font-mono-tech text-[10px] text-signal">
+              Operational
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div
         className={`relative z-10 mx-auto flex w-full max-w-[1400px] flex-col justify-center gap-10 px-6 py-16 md:flex-row md:items-center md:gap-16 md:px-10 ${
           prefersReducedMotion ? '' : 'h-screen md:py-0'
         }`}
       >
-        <div className="w-full md:w-[42%]">
-          <div className="mb-8 flex gap-2">
-            {STAGES.map((_, i) => (
-              <span
-                key={i}
-                ref={(el) => el && (progressRefs.current[i] = el)}
-                className="h-[3px] w-10 bg-[#3a3a38] transition-colors"
-              />
-            ))}
-          </div>
-
+        <div className="order-2 w-full md:order-2 md:w-[42%]">
+          <p className="mb-7 font-mono-tech text-[9px] uppercase tracking-[0.22em] text-paper/35">
+            live investigation
+          </p>
           {prefersReducedMotion ? (
             <div className="flex flex-col gap-10">
               {STAGES.map((s, i) => (
@@ -448,7 +535,7 @@ export default function PinnedStory() {
               ))}
             </div>
           ) : (
-            <div className="relative h-[260px] max-w-xl md:h-[220px]">
+            <div className="relative h-[260px] max-w-lg md:h-[250px]">
               {STAGES.map((s, i) => (
                 <div key={i} ref={(el) => el && (stageRefs.current[i] = el)} className="absolute inset-0">
                   <p className="font-mono-tech mb-5 text-xs text-signal">{s.tag}</p>
@@ -458,10 +545,21 @@ export default function PinnedStory() {
               ))}
             </div>
           )}
+
+          <div className="mt-8 flex gap-2">
+            {STAGES.map((_, i) => (
+              <span
+                key={i}
+                ref={(el) => el && (progressRefs.current[i] = el)}
+                className="h-px w-10 bg-[#3a3a38] transition-colors"
+              />
+            ))}
+          </div>
+
         </div>
 
         {prefersReducedMotion ? (
-          <div className="flex w-full flex-col gap-10 md:w-[58%]">
+          <div className="order-1 flex w-full flex-col gap-8 md:order-1 md:w-[58%]">
             <div className="pinned-story-canvas relative mx-auto aspect-[4/3] w-full max-w-xl" style={{ perspective: '1400px' }}>
               <div ref={canvasWrapRef} className="relative h-full w-full">
                 {graphContent}
@@ -470,8 +568,18 @@ export default function PinnedStory() {
             <div className="mx-auto flex w-full max-w-xl flex-col gap-6">{responseContent}</div>
           </div>
         ) : (
-          <div className="pinned-story-canvas relative w-full md:w-[58%]" style={{ perspective: '1400px' }}>
+          <div className="order-1 pinned-story-canvas relative w-full md:order-1 md:w-[58%]" style={{ perspective: '1400px' }}>
             <div ref={canvasWrapRef} className="relative aspect-[4/3] w-full" style={{ transformStyle: 'preserve-3d' }}>
+              <span
+                ref={analystRingRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-0 top-0 z-30 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-signal/45 opacity-0"
+              />
+              <span
+                ref={analystCursorRef}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-0 top-0 z-30 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-signal opacity-0"
+              />
               {graphContent}
               <div ref={responsePanelRef} className="absolute inset-0 flex flex-col justify-center gap-6 bg-ink">
                 {responseContent}
