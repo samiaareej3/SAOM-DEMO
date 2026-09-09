@@ -1,6 +1,5 @@
  import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import MagneticButton from './MagneticButton.jsx'
 import NetworkField from './NetworkField.jsx'
 import { gsap } from 'gsap'
 import handImg from '../assets/hand.png'
@@ -36,8 +35,9 @@ export default function Hero() {
   useEffect(() => {
     const ctx = gsap.context(() => {
       gsap.to(handRef.current, {
-        yPercent: 12,
-        rotate: 3,
+        yPercent: 5,
+        rotate: -2,
+
         scrollTrigger: {
           trigger: '#top',
           start: 'top top',
@@ -53,80 +53,209 @@ export default function Hero() {
   return (
     <section
       id="top"
-      className="relative min-h-[100svh] w-full overflow-hidden bg-paper pt-32 pb-20 md:pt-40"
+      className="
+        relative
+        min-h-[100svh]
+        w-full
+        overflow-hidden
+        bg-paper
+        pt-32
+        pb-20
+        md:pt-40
+      "
     >
-      {/* Network background */}
-      <NetworkField className="pointer-events-auto absolute inset-0 opacity-70" />
 
-      {/* Hand image */}
+      {/* =====================================
+          NETWORK BACKGROUND
+      ====================================== */}
+      <NetworkField
+        className="
+          pointer-events-auto
+          absolute
+          inset-0
+          opacity-70
+        "
+      />
+
+      {/* =====================================
+          HAND
+          The wrist intentionally enters from
+          outside the right edge.
+      ====================================== */}
       <div
         ref={handRef}
-        className="pointer-events-none absolute -right-16 top-16 w-[62vw] max-w-[780px] opacity-[0.92] md:-right-6 md:top-8"
+        className="
+          pointer-events-none
+          absolute
+          -right-[13vw]
+          top-[13vh]
+          z-[1]
+          w-[72vw]
+          max-w-[950px]
+          opacity-[0.94]
+
+          md:-right-[11vw]
+          md:top-[12vh]
+        "
         style={{
+          transform: 'rotate(-4deg)',
+
           maskImage:
-            'linear-gradient(to left, black 55%, transparent 96%)',
+            'linear-gradient(to left, black 58%, transparent 98%)',
+
           WebkitMaskImage:
-            'linear-gradient(to left, black 55%, transparent 96%)',
+            'linear-gradient(to left, black 58%, transparent 98%)',
         }}
       >
         <img
           src={handImg}
           alt=""
-          className="w-full select-none"
+          className="
+            block
+            w-full
+            select-none
+          "
           draggable={false}
         />
       </div>
 
-      <div className="relative z-10 mx-auto flex h-full max-w-[1400px] flex-col justify-between px-6 md:px-10">
+      {/* =====================================
+          HERO CONTENT
+      ====================================== */}
+      <div
+        className="
+          relative
+          z-10
+          mx-auto
+          flex
+          h-full
+          max-w-[1400px]
+          flex-col
+          justify-between
+          px-6
+          md:px-10
+        "
+      >
 
-        {/* HERO CONTENT */}
         <div>
 
-          {/* Eyebrow */}
+          {/* =====================================
+              EYEBROW
+          ====================================== */}
           <motion.p
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{
+              opacity: 0,
+              y: 8,
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+            }}
             transition={{
               delay: 0.15,
               duration: 0.6,
             }}
-            className="font-mono-tech mb-8 flex items-center gap-2 text-xs tracking-[0.14em] text-mute"
+            className="
+              font-mono-tech
+              mb-8
+              flex
+              items-center
+              gap-2
+              text-xs
+              tracking-[0.14em]
+              text-mute
+            "
           >
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-signal" />
+
+              <span
+                className="
+                  absolute
+                  inline-flex
+                  h-full
+                  w-full
+                  animate-ping
+                  rounded-full
+                  bg-signal
+                  opacity-75
+                "
+              />
+
+              <span
+                className="
+                  relative
+                  inline-flex
+                  h-1.5
+                  w-1.5
+                  rounded-full
+                  bg-signal
+                "
+              />
+
             </span>
 
             AUTONOMOUS SECURITY OPERATIONS
           </motion.p>
 
-          {/* Main tagline */}
+          {/* =====================================
+              MAIN HEADLINE
+          ====================================== */}
           <h1
-            className="max-w-5xl font-sans font-semibold leading-[0.9] tracking-[-0.055em] text-ink"
+            className="
+              max-w-5xl
+              font-sans
+              font-semibold
+              leading-[0.9]
+              tracking-[-0.055em]
+              text-ink
+            "
             style={{
               fontSize: 'clamp(4.5rem, 9vw, 9rem)',
               letterSpacing: '-0.055em',
             }}
           >
-            <SplitReveal chars={line1} delay={0.25} />
+
+            <SplitReveal
+              chars={line1}
+              delay={0.25}
+            />
 
             <br />
 
             <span className="text-signal">
-              <SplitReveal chars={line2} delay={0.6} />
+              <SplitReveal
+                chars={line2}
+                delay={0.6}
+              />
             </span>
+
           </h1>
 
-          {/* Supporting text — intentionally close to tagline */}
+          {/* =====================================
+              DESCRIPTION
+          ====================================== */}
           <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{
+              opacity: 0,
+              y: 12,
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+            }}
             transition={{
               delay: 1.0,
               duration: 0.7,
               ease: [0.22, 1, 0.36, 1],
             }}
-            className="mt-3 max-w-xl text-lg leading-[1.45] text-ink/70 md:text-xl"
+            className="
+              mt-3
+              max-w-xl
+              text-lg
+              leading-[1.45]
+              text-ink/70
+              md:text-xl
+            "
           >
             SAOM AI acts as an autonomous cybersecurity analyst-
             connecting signals, investigating threats, and explaining what
@@ -135,30 +264,34 @@ export default function Hero() {
 
         </div>
 
-        {/* BUTTONS */}
+        {/* =====================================
+            BUTTON AREA
+        ====================================== */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{
+            opacity: 0,
+            y: 16,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
           transition={{
             delay: 1.25,
             duration: 0.7,
             ease: [0.22, 1, 0.36, 1],
           }}
-          className="mt-16 flex items-center gap-6 md:mt-20"
-        >
-          {/* <MagneticButton>
-            Request a Demo
-          </MagneticButton> */}
-
-          {/* <a
-            href="#story"
-            className="font-mono-tech text-xs text-mute transition-colors hover:text-ink"
-          >
-            See how it works ↓
-          </a> */}
-        </motion.div>
+          className="
+            mt-16
+            flex
+            items-center
+            gap-6
+            md:mt-20
+          "
+        />
 
       </div>
+
     </section>
   )
 }

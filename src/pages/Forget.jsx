@@ -1,85 +1,164 @@
-import { useEffect, useRef, useState } from "react";
+ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
-import { gsap } from "gsap";
-import HoverInvert from "../components/HoverInvert.jsx";
-import NetworkField from "../components/NetworkField.jsx";
+import { motion, AnimatePresence } from "framer-motion";
+import NetworkField from "../components/NetworkField";
 
-const FORGET_TICKER = ["ACCESS SUSPENDED", "IDENTITY REVALIDATING", "CONTROL RESTORING"];
+const FONT_STACK =
+  "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
-/* Cycles short system-status lines. Purely decorative — carries no
-   auth state and never blocks or delays the real flow. */
-function StatusTicker({ messages, className = "" }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % messages.length);
-    }, 2600);
-    return () => clearInterval(id);
-  }, [messages.length]);
-
-  return (
-    <span className={`relative inline-block h-4 overflow-hidden ${className}`}>
-      <AnimatePresence mode="wait">
-        <motion.span
-          key={messages[index]}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute inset-0"
-        >
-          {messages[index]}
-        </motion.span>
-      </AnimatePresence>
-    </span>
-  );
-}
+const COLORS = {
+  ink: "#1D1D1F",
+  inkSoft: "#6E6E73",
+  inkFaint: "#A1A1A6",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F5F5F7",
+  divider: "#E5E5EA",
+  red: "#E1102A",
+  redDark: "#B4001F",
+  redSoft: "#FDECEE",
+};
 
 /* ============================================================
-   LOCAL PRESENTATION HELPERS
+   SIGN-IN STYLE PRIMITIVES
    ============================================================ */
 
-function Wordmark({ tone = "ink" }) {
+function Wordmark() {
   return (
     <span
-      className={`font-mono-tech text-sm tracking-[0.15em] ${
-        tone === "paper" ? "text-paper" : "text-ink"
-      }`}
+      className="text-[15px] font-semibold tracking-tight"
+      style={{ color: COLORS.ink }}
     >
-      SAOM<span className="text-signal">.</span>AI
+      SAOM<span style={{ color: COLORS.red }}>.</span>AI
     </span>
   );
 }
 
-function SignalDot({ className = "" }) {
+function IconLock(props) {
   return (
-    <span className={`relative flex h-1.5 w-1.5 ${className}`}>
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal opacity-75" />
-      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-signal" />
-    </span>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
   );
 }
 
-function FieldLabel({ htmlFor, children }) {
+const fieldMotion = {
+  hidden: { opacity: 0, y: 12 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.45,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+};
+
+const containerMotion = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.05,
+    },
+  },
+};
+
+function FloatingField({
+  id,
+  label,
+  type = "text",
+  value,
+  onChange,
+  autoComplete,
+  rightSlot,
+  inputMode,
+  maxLength,
+}) {
   return (
-    <label htmlFor={htmlFor} className="mb-2 block text-sm text-ink/70">
-      {children}
-    </label>
+    <motion.div variants={fieldMotion} className="relative">
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        required
+        placeholder=" "
+        className="peer w-full border-b-2 bg-transparent pb-2 pt-6 text-[16px] outline-none transition-colors duration-300 placeholder-transparent"
+        style={{
+          color: COLORS.ink,
+          borderColor: COLORS.divider,
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = COLORS.red;
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = COLORS.divider;
+        }}
+      />
+
+      <label
+        htmlFor={id}
+        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[15px] transition-all duration-200 peer-focus:top-0 peer-focus:translate-y-0 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-xs"
+        style={{ color: COLORS.inkFaint }}
+      >
+        {label}
+      </label>
+
+      {rightSlot && (
+        <div className="absolute bottom-2 right-0 flex items-center">
+          {rightSlot}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ShowHideButton({ shown, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[13px] font-medium"
+      style={{ color: COLORS.inkFaint }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = COLORS.red;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = COLORS.inkFaint;
+      }}
+    >
+      {shown ? "Hide" : "Show"}
+    </button>
   );
 }
 
 function StatusBanner({ tone = "error", children }) {
-  const styles =
-    tone === "error"
-      ? "border-signal/25 bg-signal/[0.06] text-[#b3001f]"
-      : "border-ink/15 bg-ink/[0.04] text-ink/80";
+  const bg =
+    tone === "error" ? COLORS.redSoft : COLORS.surfaceSoft;
+  const text =
+    tone === "error" ? COLORS.redDark : COLORS.ink;
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-lg border px-4 py-3 text-sm ${styles}`}
+      className="rounded-xl px-4 py-3 text-[13px] leading-relaxed"
+      style={{
+        backgroundColor: bg,
+        color: text,
+      }}
       role="status"
     >
       {children}
@@ -87,51 +166,85 @@ function StatusBanner({ tone = "error", children }) {
   );
 }
 
-function SubmitButton({ children, disabled, className = "" }) {
-  const ref = useRef(null);
-  const x = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
-  const y = useSpring(useMotionValue(0), { stiffness: 200, damping: 20, mass: 0.3 });
-
-  function handleMove(e) {
-    const rect = ref.current.getBoundingClientRect();
-    x.set((e.clientX - rect.left - rect.width / 2) * 0.35);
-    y.set((e.clientY - rect.top - rect.height / 2) * 0.35);
-  }
-  function handleLeave() {
-    x.set(0);
-    y.set(0);
-  }
-
+function PrimaryButton({ children, disabled }) {
   return (
-    <motion.button
-      ref={ref}
+    <button
       type="submit"
       disabled={disabled}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      style={{ x, y }}
-      className={`group relative inline-flex w-full items-center justify-center gap-3 border border-ink bg-ink px-7 py-3.5 text-sm font-medium tracking-wide text-paper transition-colors duration-500 ease-signal hover:border-signal hover:bg-signal disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-ink disabled:hover:bg-ink ${className}`}
+      className="w-full rounded-full px-7 py-3.5 text-[15px] font-medium text-white shadow-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      style={{
+        backgroundColor: COLORS.red,
+        ["--tw-ring-color"]: COLORS.red,
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) {
+          e.currentTarget.style.backgroundColor = COLORS.redDark;
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled) {
+          e.currentTarget.style.backgroundColor = COLORS.red;
+        }
+      }}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }
 
-function RequirementRow({ met, children }) {
+function TrustNote({ children }) {
   return (
-    <span className={met ? "text-emerald-600" : "text-ink/35"}>
-      {met ? "✓" : "○"} {children}
-    </span>
+    <div
+      className="flex items-center justify-center gap-2 text-[12.5px]"
+      style={{ color: COLORS.inkFaint }}
+    >
+      <IconLock className="h-3.5 w-3.5 shrink-0" />
+      {children}
+    </div>
   );
 }
 
 /* ============================================================
-   FORGOT / RESET PASSWORD
+   HERO PANEL — MATCHES SIGN-IN PAGE
+   ============================================================ */
+
+function HeroPanel() {
+  return (
+    <div
+      className="relative hidden overflow-hidden lg:flex lg:w-[42%] lg:items-center lg:justify-center"
+      style={{
+        background:
+          "linear-gradient(135deg, #FF3B4E 0%, #E1102A 45%, #7A0014 100%)",
+      }}
+    >
+      <NetworkField className="absolute inset-0 h-full w-full" />
+
+      <div className="pointer-events-none relative z-10 flex flex-col items-center px-14 text-center text-white">
+        <p className="mb-3 text-[15px] font-medium text-white/70">
+          Account recovery
+        </p>
+
+        <h1 className="text-[40px] font-semibold leading-[1.1] tracking-tight">
+          Regain access.
+        </h1>
+
+        <p className="mt-4 max-w-sm text-[16px] leading-relaxed text-white/80">
+          Securely recover your SAOM-AI workspace and create
+          a new password in two verified steps.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   FORGET / RESET PASSWORD
+   Backend flow preserved exactly:
+   /forgot-password
+   /reset-password
    ============================================================ */
 
 function Forget() {
-  const pageRef = useRef(null);
-  const scanRef = useRef(null);
   const navigate = useNavigate();
 
   const [step, setStep] = useState("email");
@@ -143,56 +256,17 @@ function Forget() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
 
   const [loading, setLoading] = useState(false);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  // ============================================================
-  // GSAP — ambient/entrance only. Framer Motion owns the card.
-  // ============================================================
-
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.from(".forgot-brand", {
-        opacity: 0,
-        x: -24,
-        duration: 0.8,
-        delay: 0.1,
-        ease: "power3.out",
-      });
-
-      gsap.from(".forgot-field", {
-        opacity: 0,
-        y: 14,
-        duration: 0.5,
-        stagger: 0.08,
-        delay: 0.3,
-        ease: "power2.out",
-      });
-
-      gsap.fromTo(
-        scanRef.current,
-        { yPercent: -20, opacity: 0 },
-        {
-          yPercent: 120,
-          opacity: 1,
-          duration: 3.2,
-          repeat: -1,
-          repeatDelay: 1.4,
-          ease: "power1.inOut",
-        }
-      );
-    }, pageRef);
-
-    return () => ctx.revert();
-  }, []);
-
-  // ============================================================
-  // SEND RESET OTP — UNCHANGED
-  // ============================================================
+  /* ==========================================================
+     SEND RESET OTP — BACKEND UNCHANGED
+     ========================================================== */
 
   const handleForgotPassword = async (e) => {
     e.preventDefault();
@@ -225,29 +299,24 @@ function Forget() {
 
       if (!response.ok) {
         throw new Error(
-          data.message ||
-            "Unable to send reset code."
+          data.message || "Unable to send reset code."
         );
       }
 
-      setMessage(
-        "Reset code sent to your email."
-      );
-
+      setMessage("Reset code sent to your email.");
       setStep("reset");
     } catch (err) {
       setError(
-        err.message ||
-          "Unable to process your request."
+        err.message || "Unable to process your request."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================================
-  // RESET PASSWORD — UNCHANGED
-  // ============================================================
+  /* ==========================================================
+     RESET PASSWORD — BACKEND UNCHANGED
+     ========================================================== */
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
@@ -255,7 +324,6 @@ function Forget() {
     setError("");
     setMessage("");
 
-    // OTP
     if (!otp || otp.length !== 6) {
       setError(
         "Please enter the 6-digit verification code."
@@ -263,11 +331,8 @@ function Forget() {
       return;
     }
 
-    // Password
     if (!newPassword) {
-      setError(
-        "Please enter a new password."
-      );
+      setError("Please enter a new password.");
       return;
     }
 
@@ -326,31 +391,27 @@ function Forget() {
 
       if (!response.ok) {
         throw new Error(
-          data.message ||
-            "Unable to reset password."
+          data.message || "Unable to reset password."
         );
       }
 
-      setMessage(
-        "Password reset successfully."
-      );
+      setMessage("Password reset successfully.");
 
       setTimeout(() => {
         navigate("/signin");
       }, 1200);
     } catch (err) {
       setError(
-        err.message ||
-          "Password reset failed."
+        err.message || "Password reset failed."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================================
-  // CHANGE EMAIL — UNCHANGED
-  // ============================================================
+  /* ==========================================================
+     CHANGE EMAIL
+     ========================================================== */
 
   const handleChangeEmail = () => {
     setStep("email");
@@ -361,8 +422,6 @@ function Forget() {
     setMessage("");
   };
 
-  // Display-only checklist derived from newPassword — does not alter
-  // the validation performed in handleResetPassword above.
   const resetRequirements = {
     length: newPassword.length >= 8,
     uppercase: /[A-Z]/.test(newPassword),
@@ -370,271 +429,443 @@ function Forget() {
     number: /[0-9]/.test(newPassword),
   };
 
-  // ============================================================
-  // UI
-  // ============================================================
-
   return (
     <div
-      ref={pageRef}
-      className="relative min-h-screen w-full overflow-hidden bg-paper px-5 py-6 md:px-8 lg:p-8"
+      className="flex min-h-screen w-full"
+      style={{
+        fontFamily: FONT_STACK,
+        backgroundColor: COLORS.surface,
+      }}
     >
-      <div className="relative mx-auto flex min-h-[calc(100svh-3rem)] w-full max-w-[1400px] flex-col overflow-hidden rounded-[28px] border border-hair bg-paper lg:flex-row lg:min-h-[calc(100svh-4rem)]">
+      <HeroPanel />
 
-        {/* ============================================================
-            LEFT — RECOVERY PANEL
-            ============================================================ */}
+      {/* ======================================================
+          FORM COLUMN
+          ====================================================== */}
 
-        <div className="forgot-brand relative flex shrink-0 flex-col justify-between overflow-hidden bg-ink px-8 py-8 text-paper md:px-12 md:py-12 lg:w-[46%] lg:px-14 lg:py-14">
+      <div className="relative flex w-full flex-col overflow-hidden lg:w-[58%]">
+        <div
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-[0.06] blur-3xl"
+          style={{ background: COLORS.red }}
+        />
 
-          <NetworkField className="pointer-events-auto absolute inset-0 opacity-60" />
+        {/* TOP WORDMARK */}
 
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.05]"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(245,243,238,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(245,243,238,.6) 1px, transparent 1px)",
-              backgroundSize: "42px 42px",
-            }}
-          />
-
-          <div
-            ref={scanRef}
-            className="pointer-events-none absolute inset-x-0 top-0 h-24 opacity-0"
-            style={{
-              background:
-                "linear-gradient(to bottom, transparent, rgba(237,28,46,0.22), transparent)",
-            }}
-          />
-
-          <div className="relative z-10">
-            <Link to="/" className="inline-block">
-              <Wordmark tone="paper" />
-            </Link>
-          </div>
-
-          <div className="relative z-10 mt-16 lg:mt-0">
-            <p className="font-mono-tech mb-5 flex items-center gap-2 text-xs tracking-[0.14em] text-paper/50">
-              <SignalDot />
-              ACCOUNT RECOVERY
-            </p>
-
-            <h1
-              className="max-w-md font-sans font-semibold leading-[0.98] tracking-[-0.03em] text-paper"
-              style={{ fontSize: "clamp(2.4rem, 4.2vw, 3.6rem)" }}
-            >
-              Regain
-              <br />
-              <span className="text-signal">control.</span>
-            </h1>
-
-            <p className="mt-5 max-w-sm text-base leading-[1.55] text-paper/60">
-              Securely recover access to your SAOM-AI workspace in
-              two verified steps.
-            </p>
-          </div>
-
-          <div className="relative z-10 mt-14 flex flex-col gap-2 text-xs tracking-[0.16em] text-paper/40 lg:mt-0">
-            <div className="flex items-center gap-3">
-              <span className="h-px w-8 bg-signal" />
-              <span className="font-mono-tech">RECOVERY · VERIFICATION · ACCESS</span>
-            </div>
-            <StatusTicker
-              messages={FORGET_TICKER}
-              className="font-mono-tech pl-11 text-paper/55"
-            />
-          </div>
+        <div className="relative z-10 px-6 py-6 lg:px-14 lg:py-8">
+          <Link to="/">
+            <Wordmark />
+          </Link>
         </div>
 
-        {/* ============================================================
-            RIGHT — FORM
-            ============================================================ */}
+        {/* FORM */}
 
-        <div className="flex flex-1 items-center justify-center px-6 py-12 md:px-12 lg:px-16">
-          <div className="w-full max-w-[420px]">
-            <AnimatePresence mode="wait">
+        <div className="relative z-10 flex flex-1 items-center justify-center px-6 pb-16 pt-4 lg:px-14">
+          <div className="w-full max-w-[400px]">
+            <motion.div
+              variants={containerMotion}
+              initial="hidden"
+              animate="visible"
+            >
+              <AnimatePresence mode="wait">
+                {/* ==================================================
+                    EMAIL STEP
+                    ================================================== */}
 
-              {/* ==================================================
-                  EMAIL STEP
-                  ================================================== */}
+                {step === "email" && (
+                  <motion.div
+                    key="email"
+                    initial={{
+                      opacity: 0,
+                      x: 20,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      x: 0,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      x: -20,
+                    }}
+                    transition={{
+                      duration: 0.35,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                  >
+                    <motion.h2
+                      variants={fieldMotion}
+                      className="text-[32px] font-semibold tracking-tight md:text-[36px]"
+                      style={{ color: COLORS.ink }}
+                    >
+                      Forgot password?
+                    </motion.h2>
 
-              {step === "email" && (
-                <motion.div
-                  key="email"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
-                    ACCOUNT RECOVERY
-                  </p>
+                    <motion.p
+                      variants={fieldMotion}
+                      className="mt-2 text-[15px]"
+                      style={{
+                        color: COLORS.inkSoft,
+                      }}
+                    >
+                      Enter your email to receive a
+                      verification code.
+                    </motion.p>
 
-                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
-                    Forgot password?
-                  </h2>
-
-                  <p className="mt-3 text-sm leading-relaxed text-ink/55">
-                    Enter the email associated with your account and
-                    we'll send you a verification code.
-                  </p>
-
-                  <form onSubmit={handleForgotPassword} className="mt-8 space-y-5">
-                    <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-email">Email</FieldLabel>
-                      <input
+                    <form
+                      onSubmit={handleForgotPassword}
+                      className="mt-9 space-y-6"
+                    >
+                      <FloatingField
                         id="fp-email"
+                        label="Email"
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="you@company.com"
+                        onChange={(e) =>
+                          setEmail(e.target.value)
+                        }
                         autoComplete="email"
-                        autoFocus
-                        required
-                        className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
                       />
+
+                      <AnimatePresence>
+                        {error && (
+                          <StatusBanner key="err">
+                            {error}
+                          </StatusBanner>
+                        )}
+
+                        {message && (
+                          <StatusBanner
+                            key="msg"
+                            tone="info"
+                          >
+                            {message}
+                          </StatusBanner>
+                        )}
+                      </AnimatePresence>
+
+                      <motion.div variants={fieldMotion}>
+                        <PrimaryButton disabled={loading}>
+                          {loading
+                            ? "Sending code…"
+                            : "Send reset code"}
+                        </PrimaryButton>
+                      </motion.div>
+                    </form>
+
+                    <motion.p
+                      variants={fieldMotion}
+                      className="mt-6 text-center text-[14px]"
+                      style={{
+                        color: COLORS.inkSoft,
+                      }}
+                    >
+                      Remember your password?{" "}
+                      <Link
+                        to="/signin"
+                        className="font-medium"
+                        style={{
+                          color: COLORS.red,
+                        }}
+                      >
+                        Sign in
+                      </Link>
+                    </motion.p>
+
+                    <div className="mt-6">
+                      <TrustNote>
+                        Your account information stays
+                        protected.
+                      </TrustNote>
                     </div>
+                  </motion.div>
+                )}
 
-                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
-                    {message && <StatusBanner tone="success">{message}</StatusBanner>}
+                {/* ==================================================
+                    RESET STEP
+                    ================================================== */}
 
-                    <SubmitButton disabled={loading}>
-                      {loading ? "Sending code…" : "Send Reset Code"}
-                    </SubmitButton>
-                  </form>
+                {step === "reset" && (
+                  <motion.div
+                    key="reset"
+                    initial={{
+                      opacity: 0,
+                      x: 20,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      x: 0,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      x: -20,
+                    }}
+                    transition={{
+                      duration: 0.35,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                  >
+                    <motion.h2
+                      variants={fieldMotion}
+                      className="text-[32px] font-semibold tracking-tight md:text-[36px]"
+                      style={{ color: COLORS.ink }}
+                    >
+                      Create a new password
+                    </motion.h2>
 
-                  <p className="mt-7 text-center text-sm text-ink/55">
-                    Remember your password?{" "}
-                    <Link to="/signin" className="text-ink">
-                      <HoverInvert className="hover:!text-signal">Sign in</HoverInvert>
-                    </Link>
-                  </p>
-                </motion.div>
-              )}
+                    <motion.p
+                      variants={fieldMotion}
+                      className="mt-2 text-[15px]"
+                      style={{
+                        color: COLORS.inkSoft,
+                      }}
+                    >
+                      Enter the verification code and
+                      choose your new password.
+                    </motion.p>
 
-              {/* ==================================================
-                  RESET STEP
-                  ================================================== */}
+                    <motion.div
+                      variants={fieldMotion}
+                      className="mt-4"
+                    >
+                      <p
+                        className="text-[13px]"
+                        style={{
+                          color: COLORS.inkFaint,
+                        }}
+                      >
+                        Verification code sent to
+                      </p>
 
-              {step === "reset" && (
-                <motion.div
-                  key="reset"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <p className="font-mono-tech mb-4 text-xs tracking-[0.18em] text-signal">
-                    RESET PASSWORD
-                  </p>
+                      <p
+                        className="mt-1 break-all text-[14px] font-medium"
+                        style={{
+                          color: COLORS.ink,
+                        }}
+                      >
+                        {email}
+                      </p>
+                    </motion.div>
 
-                  <h2 className="font-sans text-3xl font-semibold tracking-[-0.02em] text-ink md:text-4xl">
-                    Create a new password
-                  </h2>
+                    <form
+                      onSubmit={handleResetPassword}
+                      className="mt-7 space-y-6"
+                    >
+                      {/* OTP */}
 
-                  <p className="mt-3 text-sm text-ink/55">
-                    Verification code sent to:
-                  </p>
-                  <p className="mt-1 break-all text-sm font-medium text-ink">
-                    {email}
-                  </p>
-
-                  <form onSubmit={handleResetPassword} className="mt-7 space-y-5">
-                    <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-otp">Verification code</FieldLabel>
-                      <input
+                      <FloatingField
                         id="fp-otp"
+                        label="Verification code"
                         type="text"
+                        value={otp}
+                        onChange={(e) =>
+                          setOtp(
+                            e.target.value
+                              .replace(/\D/g, "")
+                              .slice(0, 6)
+                          )
+                        }
                         inputMode="numeric"
                         maxLength={6}
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                        placeholder="000000"
-                        autoFocus
-                        required
-                        className="w-full rounded-xl border border-ink/15 bg-paper px-4 py-4 text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                        style={{
-                          backgroundImage:
-                            "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6 - 1px), rgba(10,10,10,0.08) calc(100%/6))",
-                        }}
+                        autoComplete="one-time-code"
                       />
-                    </div>
 
-                    <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-new">New password</FieldLabel>
-                      <div className="relative">
-                        <input
-                          id="fp-new"
-                          type={showPassword ? "text" : "password"}
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="New password"
-                          autoComplete="new-password"
-                          required
-                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink/45 transition-colors hover:text-signal"
+                      {/* NEW PASSWORD */}
+
+                      <FloatingField
+                        id="fp-new"
+                        label="New password"
+                        type={
+                          showPassword
+                            ? "text"
+                            : "password"
+                        }
+                        value={newPassword}
+                        onChange={(e) =>
+                          setNewPassword(
+                            e.target.value
+                          )
+                        }
+                        autoComplete="new-password"
+                        rightSlot={
+                          <ShowHideButton
+                            shown={showPassword}
+                            onClick={() =>
+                              setShowPassword(
+                                (value) => !value
+                              )
+                            }
+                          />
+                        }
+                      />
+
+                      {/* CONFIRM PASSWORD */}
+
+                      <FloatingField
+                        id="fp-confirm"
+                        label="Confirm password"
+                        type={
+                          showConfirmPassword
+                            ? "text"
+                            : "password"
+                        }
+                        value={confirmPassword}
+                        onChange={(e) =>
+                          setConfirmPassword(
+                            e.target.value
+                          )
+                        }
+                        autoComplete="new-password"
+                        rightSlot={
+                          <ShowHideButton
+                            shown={
+                              showConfirmPassword
+                            }
+                            onClick={() =>
+                              setShowConfirmPassword(
+                                (value) => !value
+                              )
+                            }
+                          />
+                        }
+                      />
+
+                      {/* REQUIREMENTS */}
+
+                      <motion.div
+                        variants={fieldMotion}
+                        className="rounded-xl px-4 py-4 text-[12.5px]"
+                        style={{
+                          backgroundColor:
+                            COLORS.surfaceSoft,
+                        }}
+                      >
+                        <p
+                          className="mb-3"
+                          style={{
+                            color: COLORS.inkFaint,
+                          }}
                         >
-                          {showPassword ? "Hide" : "Show"}
-                        </button>
-                      </div>
+                          Password requirements
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <span
+                            style={{
+                              color:
+                                resetRequirements.length
+                                  ? "#198754"
+                                  : COLORS.inkFaint,
+                            }}
+                          >
+                            {resetRequirements.length
+                              ? "✓"
+                              : "○"}{" "}
+                            8+ characters
+                          </span>
+
+                          <span
+                            style={{
+                              color:
+                                resetRequirements.uppercase
+                                  ? "#198754"
+                                  : COLORS.inkFaint,
+                            }}
+                          >
+                            {resetRequirements.uppercase
+                              ? "✓"
+                              : "○"}{" "}
+                            Uppercase
+                          </span>
+
+                          <span
+                            style={{
+                              color:
+                                resetRequirements.lowercase
+                                  ? "#198754"
+                                  : COLORS.inkFaint,
+                            }}
+                          >
+                            {resetRequirements.lowercase
+                              ? "✓"
+                              : "○"}{" "}
+                            Lowercase
+                          </span>
+
+                          <span
+                            style={{
+                              color:
+                                resetRequirements.number
+                                  ? "#198754"
+                                  : COLORS.inkFaint,
+                            }}
+                          >
+                            {resetRequirements.number
+                              ? "✓"
+                              : "○"}{" "}
+                            Number
+                          </span>
+                        </div>
+                      </motion.div>
+
+                      <AnimatePresence>
+                        {error && (
+                          <StatusBanner key="err">
+                            {error}
+                          </StatusBanner>
+                        )}
+
+                        {message && (
+                          <StatusBanner
+                            key="msg"
+                            tone="info"
+                          >
+                            {message}
+                          </StatusBanner>
+                        )}
+                      </AnimatePresence>
+
+                      <motion.div variants={fieldMotion}>
+                        <PrimaryButton disabled={loading}>
+                          {loading
+                            ? "Resetting…"
+                            : "Reset password"}
+                        </PrimaryButton>
+                      </motion.div>
+
+                      <button
+                        type="button"
+                        onClick={handleChangeEmail}
+                        disabled={loading}
+                        className="w-full text-[14px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{
+                          color: COLORS.inkSoft,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!loading) {
+                            e.currentTarget.style.color =
+                              COLORS.ink;
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!loading) {
+                            e.currentTarget.style.color =
+                              COLORS.inkSoft;
+                          }
+                        }}
+                      >
+                        ← Change email
+                      </button>
+                    </form>
+
+                    <div className="mt-6">
+                      <TrustNote>
+                        Your password is securely
+                        protected.
+                      </TrustNote>
                     </div>
-
-                    <div className="forgot-field">
-                      <FieldLabel htmlFor="fp-confirm">Confirm password</FieldLabel>
-                      <div className="relative">
-                        <input
-                          id="fp-confirm"
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="Confirm password"
-                          autoComplete="new-password"
-                          required
-                          className="w-full rounded-xl border border-ink/12 bg-paper px-4 py-3 pr-16 text-ink placeholder:text-ink/30 outline-none transition-colors duration-300 focus:border-signal focus:ring-2 focus:ring-signal/10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink/45 transition-colors hover:text-signal"
-                        >
-                          {showConfirmPassword ? "Hide" : "Show"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="forgot-field rounded-xl border border-hair bg-ink/[0.02] p-4 text-xs">
-                      <p className="mb-3 text-ink/45">Password requirements</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <RequirementRow met={resetRequirements.length}>8+ characters</RequirementRow>
-                        <RequirementRow met={resetRequirements.uppercase}>Uppercase</RequirementRow>
-                        <RequirementRow met={resetRequirements.lowercase}>Lowercase</RequirementRow>
-                        <RequirementRow met={resetRequirements.number}>Number</RequirementRow>
-                      </div>
-                    </div>
-
-                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
-                    {message && <StatusBanner tone="success">{message}</StatusBanner>}
-
-                    <SubmitButton disabled={loading}>
-                      {loading ? "Resetting…" : "Reset Password"}
-                    </SubmitButton>
-
-                    <button
-                      type="button"
-                      onClick={handleChangeEmail}
-                      disabled={loading}
-                      className="w-full text-sm text-ink/50 transition-colors hover:text-ink disabled:opacity-50"
-                    >
-                      ← Change email
-                    </button>
-                  </form>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           </div>
         </div>
       </div>

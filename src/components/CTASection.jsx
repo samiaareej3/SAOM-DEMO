@@ -1,4 +1,5 @@
-  import { useEffect, useRef } from "react";
+   import { useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -253,16 +254,6 @@ export default function FinalCTASection() {
 
       <div className="relative z-10 mx-auto flex min-h-[70vh] w-full max-w-[1600px] flex-col items-center justify-center px-6 py-28 text-center md:px-12 lg:px-16">
         <div className="final-cta-content flex max-w-[720px] flex-col items-center">
-          <div className="mb-8 flex items-center gap-3">
-            <span className="font-mono text-xs tracking-[0.2em] text-[#ed1c2e]">
-              09
-            </span>
-            <span className="h-px w-8 bg-[#ed1c2e]" />
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-black/55">
-              Get started
-            </span>
-          </div>
-
           <h2 className="text-[clamp(2.2rem,4.4vw,4.2rem)] font-semibold leading-[1.04] tracking-[-0.04em]">
             Your systems never stop.
             <br />
@@ -271,23 +262,13 @@ export default function FinalCTASection() {
           </h2>
 
           <div className="mt-11 flex flex-col items-center gap-5">
-            <button
-              type="button"
+            <Link
+              to="/signup"
               className="group relative overflow-hidden rounded-full bg-black px-9 py-4 font-mono text-[13px] uppercase tracking-[0.14em] text-white transition-colors duration-300 hover:text-black"
             >
               <span className="absolute inset-0 origin-left scale-x-0 bg-[#ed1c2e] transition-transform duration-300 ease-out group-hover:scale-x-100" />
               <span className="relative">Request early access</span>
-            </button>
-
-            <a
-              href="#platform"
-              className="group inline-flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.16em] text-black/55 transition-colors duration-300 hover:text-[#ed1c2e]"
-            >
-              Meet SAOM AI
-              <span className="transition-transform duration-300 group-hover:translate-x-1">
-                →
-              </span>
-            </a>
+            </Link>
           </div>
         </div>
       </div>

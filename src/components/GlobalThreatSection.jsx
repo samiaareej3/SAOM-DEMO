@@ -1,4 +1,4 @@
-  import { useEffect, useMemo, useRef, useState } from "react";
+   import { useEffect, useMemo, useRef, useState } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
@@ -751,18 +751,6 @@ export default function GlobalThreatSection() {
         <div className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:gap-0">
           {/* LEFT */}
           <div className="global-threat-copy relative z-10 max-w-[650px]">
-            <div className="mb-7 flex items-center gap-3">
-              <span className="font-mono text-xs tracking-[0.2em] text-[#e4002b]">
-                08
-              </span>
-
-              <span className="h-px w-8 bg-[#e4002b]" />
-
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-black/55">
-                Global Threat Intelligence
-              </span>
-            </div>
-
             <h2 className="max-w-[620px] text-[clamp(3.2rem,5.2vw,6.2rem)] font-semibold leading-[0.91] tracking-[-0.055em]">
               One environment.
               <br />

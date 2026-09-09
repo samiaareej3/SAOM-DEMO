@@ -35,18 +35,14 @@ export default function ProblemSection() {
   const [hoveredCard, setHoveredCard] = useState(null)
 
   return (
-     <section
+    <section
   id="problem"
-  className="relative overflow-hidden bg-paper pt-20 pb-28 md:pt-24 md:pb-36"
+  className="relative overflow-hidden bg-paper pt-20 pb-10 md:pt-24 md:pb-14"
 >
       <div className="relative z-10 mx-auto max-w-[1400px] px-6 md:px-10">
 
         {/* INTRO */}
         <div className="max-w-[1150px]">
-
-          <p className="font-mono-tech mb-7 text-xs tracking-[0.2em] text-signal">
-            01 — THE PROBLEM
-          </p>
 
           <h2 className="max-w-5xl font-sans text-4xl font-semibold leading-[0.94] tracking-[-0.045em] text-ink md:text-6xl lg:text-[5.5rem]">
             The problem isn't detection.
@@ -65,7 +61,7 @@ export default function ProblemSection() {
         </div>
 
         {/* PROBLEM CARDS */}
-         <div className="mt-16 grid grid-cols-1 gap-5 md:mt-20 md:grid-cols-2">
+        <div className="mt-16 grid grid-cols-1 gap-5 md:mt-20 md:grid-cols-2">
           {CARDS.map((card, index) => {
             const isHovered = hoveredCard === index
 
@@ -157,7 +153,6 @@ export default function ProblemSection() {
               </article>
             )
           })}
-
         </div>
 
       </div>

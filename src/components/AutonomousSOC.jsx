@@ -1,4 +1,4 @@
-  import { useEffect, useRef, useState } from 'react'
+   import { useEffect, useRef, useState } from 'react'
 import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
@@ -465,10 +465,6 @@ export default function AutonomousSOC() {
       <div className="relative z-10 mx-auto max-w-[1500px] px-6 md:px-10">
         {/* HEADER */}
         <div className="max-w-[1150px]">
-          <p className="font-mono-tech mb-7 text-xs tracking-[0.2em] text-signal">
-            AUTONOMOUS OPERATIONS
-          </p>
-
           <h2 className="max-w-4xl font-sans text-4xl font-bold leading-[0.91] tracking-[-0.05em] text-ink md:text-6xl lg:text-[5.5rem]">
             <Word>Every</Word>{' '}
             <span className="text-signal"><Word>signal</Word></span>
