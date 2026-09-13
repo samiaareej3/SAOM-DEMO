@@ -1,279 +1,242 @@
-const API_BASE_URL =
-    import.meta.env.VITE_API_URL || "http://localhost:5000";
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiDelete,
+} from "./apiClient";
 
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
 
-/**
- * Get JWT token from browser storage
- */
-function getToken() {
-    return (
-        localStorage.getItem("saom_token") ||
-        sessionStorage.getItem("saom_token")
-    );
+export function getDashboardStats() {
+  return apiGet("/api/stats");
 }
 
-
-/**
- * Generic API request helper
- */
-async function apiRequest(endpoint, options = {}) {
-
-    const token = getToken();
-
-    const response = await fetch(
-        `${API_BASE_URL}${endpoint}`,
-        {
-            ...options,
-
-            headers: {
-                "Content-Type": "application/json",
-
-                ...(token
-                    ? {
-                        Authorization: `Bearer ${token}`,
-                    }
-                    : {}),
-
-                ...(options.headers || {}),
-            },
-        }
-    );
-
-    let data;
-
-    try {
-        data = await response.json();
-    } catch {
-        data = null;
-    }
-
-    if (!response.ok) {
-
-        throw new Error(
-            data?.message ||
-            `Request failed with status ${response.status}`
-        );
-
-    }
-
-    return data;
+export function getAttackTimeline() {
+  return apiGet("/api/timeline");
 }
 
+/* =========================================================
+   ALERTS
+   ========================================================= */
 
-/**
- * Dashboard statistics
- */
-export async function getDashboardStats() {
+export function getAlerts(params = "") {
+  const query = params ? `?${params}` : "";
 
-    return apiRequest(
-        "/api/stats"
-    );
-
+  return apiGet(`/api/alerts${query}`);
 }
 
+export function getAlertById(alertId) {
+  if (!alertId) {
+    throw new Error("Alert ID is required.");
+  }
 
-/**
- * Alerts
- */
-export async function getAlerts() {
-
-    return apiRequest(
-        "/api/alerts"
-    );
-
+  return apiGet(
+    `/api/alerts/${encodeURIComponent(alertId)}`
+  );
 }
 
+export function updateAlert(alertId, body = {}) {
+  if (!alertId) {
+    throw new Error("Alert ID is required.");
+  }
 
-/**
- * Assets
- */
-export async function getAssets() {
-
-    return apiRequest(
-        "/api/assets"
-    );
-
+  return apiPatch(
+    `/api/alerts/${encodeURIComponent(alertId)}`,
+    body
+  );
 }
 
+export function deleteAlert(alertId) {
+  if (!alertId) {
+    throw new Error("Alert ID is required.");
+  }
 
-/**
- * Timeline
- */
-export async function getTimeline() {
-
-    return apiRequest(
-        "/api/timeline"
-    );
-
+  return apiDelete(
+    `/api/alerts/${encodeURIComponent(alertId)}`
+  );
 }
 
+/* =========================================================
+   ASSETS
+   ========================================================= */
 
-/**
- * Geo threat intelligence
- */
-export async function getGeoThreats() {
+export function getAssets(params = "") {
+  const query = params ? `?${params}` : "";
 
-    return apiRequest(
-        "/api/geo-threats"
-    );
-
+  return apiGet(`/api/assets${query}`);
 }
 
+export function getAssetById(assetId) {
+  if (!assetId) {
+    throw new Error("Asset ID is required.");
+  }
 
-/**
- * Attack graph
- */
-export async function getAttackGraph() {
-
-    return apiRequest(
-        "/api/graph"
-    );
-
+  return apiGet(
+    `/api/assets/${encodeURIComponent(assetId)}`
+  );
 }
 
+/* =========================================================
+   SECURITY AUDIT
+   ========================================================= */
 
-/**
- * Investigation
- */
-export async function getInvestigation(
-    alertId
-) {
-
-    return apiRequest(
-        `/api/investigation/${alertId}`
-    );
-
+export function runSecurityAudit(body = {}) {
+  return apiPost("/api/audit/run", {
+    trigger_type: body.trigger_type || "MANUAL",
+    generated_by: body.generated_by || "SAOM-AI",
+  });
 }
 
-
-/**
- * Audit information
- */
-export async function getAudit() {
-
-    return apiRequest(
-        "/api/audit"
-    );
-
+export function getAuditTriggers() {
+  return apiGet("/api/audit/triggers");
 }
 
-
-/**
- * SOAR health/status
- */
-export async function getSOARStatus() {
-
-    return apiRequest(
-        "/api/soar"
-    );
-
+export function getAuditHistory(limit = 25) {
+  return apiGet(`/api/audit/history?limit=${limit}`);
 }
 
+export function getAuditById(auditId) {
+  if (!auditId) {
+    throw new Error("Audit ID is required.");
+  }
 
-/**
- * SOAR actions
- */
-export async function getSOARActions() {
-
-    return apiRequest(
-        "/api/soar/actions"
-    );
-
+  return apiGet(
+    `/api/audit/${encodeURIComponent(auditId)}`
+  );
 }
 
+export function getAuditReport(auditId) {
+  if (!auditId) {
+    throw new Error("Audit ID is required.");
+  }
 
-/**
- * Approve SOAR action
- */
-export async function approveSOARAction(
-    actionId,
-    approvalNote = ""
-) {
-
-    return apiRequest(
-        `/api/soar/actions/${actionId}/approve`,
-        {
-            method: "POST",
-
-            body: JSON.stringify({
-                approved_by: "ANALYST",
-                approval_note: approvalNote
-            })
-        }
-    );
-
+  return apiGet(
+    `/api/report/${encodeURIComponent(auditId)}`
+  );
 }
 
+/* =========================================================
+   SOAR
+   ========================================================= */
 
-/**
- * Reject SOAR action
- */
-export async function rejectSOARAction(
-    actionId,
-    approvalNote = ""
-) {
-
-    return apiRequest(
-        `/api/soar/actions/${actionId}/reject`,
-        {
-            method: "POST",
-
-            body: JSON.stringify({
-                rejected_by: "ANALYST",
-                approval_note: approvalNote
-            })
-        }
-    );
-
+export function getSOARHealth() {
+  return apiGet("/api/soar/health");
 }
 
+export function getSOARActions(params = "") {
+  const query = params ? `?${params}` : "";
 
-/**
- * Execute approved SOAR action
- */
-export async function executeSOARAction(
-    actionId
-) {
-
-    return apiRequest(
-        `/api/soar/actions/${actionId}/execute`,
-        {
-            method: "POST"
-        }
-    );
-
+  return apiGet(`/api/soar/actions${query}`);
 }
 
+export function getSOARActionById(actionId) {
+  if (!actionId) {
+    throw new Error("SOAR action ID is required.");
+  }
 
-/**
- * Export helper
- */
-export default {
+  return apiGet(
+    `/api/soar/actions/${encodeURIComponent(actionId)}`
+  );
+}
 
-    getDashboardStats,
+export function createSOARPlaybook(alertId) {
+  if (!alertId) {
+    throw new Error("No alert ID was provided.");
+  }
 
-    getAlerts,
+  return apiPost(
+    `/api/soar/actions/from-alert/${encodeURIComponent(alertId)}`
+  );
+}
 
-    getAssets,
+export function approveSOARAction(actionId, body = {}) {
+  if (!actionId) {
+    throw new Error("SOAR action ID is required.");
+  }
 
-    getTimeline,
+  return apiPost(
+    `/api/soar/actions/${encodeURIComponent(actionId)}/approve`,
+    body
+  );
+}
 
-    getGeoThreats,
+export function rejectSOARAction(actionId, body = {}) {
+  if (!actionId) {
+    throw new Error("SOAR action ID is required.");
+  }
 
-    getAttackGraph,
+  return apiPost(
+    `/api/soar/actions/${encodeURIComponent(actionId)}/reject`,
+    body
+  );
+}
 
-    getInvestigation,
+export function executeSOARAction(actionId) {
+  if (!actionId) {
+    throw new Error("SOAR action ID is required.");
+  }
 
-    getAudit,
+  return apiPost(
+    `/api/soar/actions/${encodeURIComponent(actionId)}/execute`
+  );
+}
 
-    getSOARStatus,
+/* =========================================================
+   INVESTIGATION
+   ========================================================= */
 
-    getSOARActions,
+export function backtrackAttack(targetAssetId) {
+  if (!targetAssetId) {
+    throw new Error("Target asset ID is required.");
+  }
 
-    approveSOARAction,
+  return apiPost(
+    `/api/investigation/backtrack/${encodeURIComponent(
+      targetAssetId
+    )}`
+  );
+}
 
-    rejectSOARAction,
+export function investigateAttack(targetAssetId) {
+  if (!targetAssetId) {
+    throw new Error("Target asset ID is required.");
+  }
 
-    executeSOARAction
+  return apiPost(
+    `/api/investigation/${encodeURIComponent(targetAssetId)}`
+  );
+}
 
-};
+/* =========================================================
+   THREAT SIMULATION
+   ========================================================= */
+
+export function simulateThreat(body = {}) {
+  return apiPost("/api/threats/simulate", body);
+}
+
+/* =========================================================
+   ENVIRONMENT SCANNER
+   ========================================================= */
+
+export function scanEnvironment(simulateThreats = true) {
+  return apiPost("/api/scanner/scan", {
+    simulateThreats,
+  });
+}
+
+/* =========================================================
+   GEO INTELLIGENCE
+   ========================================================= */
+
+export function lookupIP(ip) {
+  if (!ip) {
+    throw new Error("IP address is required.");
+  }
+
+  return apiGet(
+    `/api/geo-threats/${encodeURIComponent(ip)}`
+  );
+}
