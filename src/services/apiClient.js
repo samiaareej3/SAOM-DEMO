@@ -31,38 +31,57 @@ async function apiRequest(endpoint, options = {}) {
     ...(options.headers || {}),
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
 
-  const responseText = await response.text();
-
-  let data;
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, 30000);
 
   try {
-    data = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    data = responseText;
-  }
-
-  if (!response.ok) {
-    console.error("SAOM API REQUEST FAILED", {
-      method: options.method || "GET",
-      url,
-      status: response.status,
-      hasToken: Boolean(token),
-      response: data,
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
     });
 
-    throw new Error(
-      data?.message ||
-        data?.error ||
-        `Request failed with status ${response.status}`
-    );
-  }
+    const responseText = await response.text();
 
-  return data;
+    let data;
+
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      data = responseText;
+    }
+
+    if (!response.ok) {
+      console.error("SAOM API REQUEST FAILED", {
+        method: options.method || "GET",
+        url,
+        status: response.status,
+        hasToken: Boolean(token),
+        response: data,
+      });
+
+      throw new Error(
+        data?.message ||
+          data?.error ||
+          `Request failed with status ${response.status}`
+      );
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(
+        "The scanner took too long to respond. Check your backend terminal."
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function apiGet(endpoint, options = {}) {

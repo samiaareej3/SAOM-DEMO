@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { scanEnvironment } from "../services/dashboardApi";
 
@@ -32,7 +31,29 @@ export default function Scanner() {
 
     try {
       const response = await scanEnvironment(simulateThreats);
-      setResult(unwrap(response));
+      const scanResult = unwrap(response);
+
+      let finalResult = scanResult;
+
+      // Get the latest saved scan result from the backend.
+      try {
+        const latestResponse = await fetch(
+          "http://localhost:5000/api/scanner/latest"
+        );
+
+        if (latestResponse.ok) {
+          const latestData = await latestResponse.json();
+          const latestResult = unwrap(latestData);
+
+          if (latestResult && Object.keys(latestResult).length > 0) {
+            finalResult = latestResult;
+          }
+        }
+      } catch (latestError) {
+        console.warn("Could not fetch latest scan:", latestError);
+      }
+
+      setResult(finalResult);
     } catch (err) {
       setError(err?.message || "Environment scan failed.");
     } finally {
@@ -42,9 +63,34 @@ export default function Scanner() {
 
   const findings = Array.isArray(result?.findings)
     ? result.findings
-    : [];
+    : Array.isArray(result?.alerts)
+      ? result.alerts
+      : Array.isArray(result?.results)
+        ? result.results
+        : [];
 
-  const status = result?.status || "NOT_SCANNED";
+  const status = result
+    ? result.status ||
+      result.scan_status ||
+      result.scanStatus ||
+      "SCANNED"
+    : "NOT_SCANNED";
+
+  const assetsScanned =
+    result?.assets_scanned ??
+    result?.assetsScanned ??
+    result?.asset_count ??
+    result?.assetCount ??
+    result?.assets?.length ??
+    result?.results?.length ??
+    "—";
+
+  const threatsFound =
+    result?.threats_found ??
+    result?.threatsFound ??
+    result?.alerts_created ??
+    result?.alertsCreated ??
+    findings.length;
 
   return (
     <main className="min-h-screen bg-[#05080d] px-6 py-8 text-slate-100 lg:px-10">
@@ -109,20 +155,22 @@ export default function Scanner() {
             tone={
               status === "SECURE"
                 ? "text-emerald-300"
-                : "text-amber-300"
+                : status === "SCANNED"
+                  ? "text-cyan-300"
+                  : "text-amber-300"
             }
           />
 
           <Stat
             label="Assets scanned"
-            value={result?.assets_scanned}
+            value={assetsScanned}
           />
 
           <Stat
             label="Threats found"
-            value={result?.threats_found}
+            value={threatsFound}
             tone={
-              Number(result?.threats_found) > 0
+              Number(threatsFound) > 0
                 ? "text-red-300"
                 : "text-emerald-300"
             }
@@ -149,33 +197,74 @@ export default function Scanner() {
             </p>
           ) : (
             <div className="mt-5 space-y-3">
-              {findings.map((finding, index) => (
-                <div
-                  key={finding.event_id || finding.id || index}
-                  className="rounded-xl border border-white/10 bg-black/20 p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-semibold text-slate-200">
-                      {finding.attack_type ||
-                        finding.type ||
-                        "Security finding"}
+              {findings.map((finding, index) => {
+                const attackType =
+                  finding.attack_type ||
+                  finding.attackType ||
+                  finding.type ||
+                  finding.alert_type ||
+                  "Security finding";
+
+                const hostname =
+                  finding.hostname ||
+                  finding.asset_id ||
+                  finding.assetId ||
+                  finding.destination_host ||
+                  "Unknown asset";
+
+                const sourceIp =
+                  finding.source_ip ||
+                  finding.sourceIp ||
+                  finding.source ||
+                  "—";
+
+                const destinationIp =
+                  finding.destination_ip ||
+                  finding.destinationIp ||
+                  finding.destination ||
+                  "—";
+
+                const severity =
+                  finding.severity ||
+                  finding.risk_level ||
+                  finding.riskLevel ||
+                  "HIGH";
+
+                const description =
+                  finding.description ||
+                  finding.message ||
+                  finding.details ||
+                  "Security activity detected during the environment scan.";
+
+                return (
+                  <div
+                    key={finding.event_id || finding.id || index}
+                    className="rounded-xl border border-white/10 bg-black/20 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-200">
+                        {attackType}
+                      </p>
+
+                      <span className="text-xs text-cyan-300">
+                        {hostname}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      Source: {sourceIp} → Destination: {destinationIp}
                     </p>
 
-                    <span className="text-xs text-cyan-300">
-                      {finding.hostname ||
-                        finding.asset_id ||
-                        "Unknown asset"}
-                    </span>
-                  </div>
+                    <p className="mt-2 text-xs font-semibold uppercase text-amber-300">
+                      Severity: {severity}
+                    </p>
 
-                  <p className="mt-2 text-sm text-slate-500">
-                    Source: {finding.source_ip || "—"} → Destination:{" "}
-                    {finding.destination_ip ||
-                      finding.destination ||
-                      "—"}
-                  </p>
-                </div>
-              ))}
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      {description}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
