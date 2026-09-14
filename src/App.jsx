@@ -1,3 +1,4 @@
+
 import {
   BrowserRouter,
   Routes,
@@ -8,12 +9,26 @@ import {
 
 import { AnimatePresence, motion } from "framer-motion";
 
+// Public pages
 import Home from "./pages/Home";
 import Signin from "./pages/Signin";
 import Signup from "./pages/Signup";
 import Forget from "./pages/Forget";
+
+// Dashboard layout
+import DashboardLayout from "./components/dashboard/DashboardLayout";
+
+// Dashboard pages
 import Dashboard from "./pages/Dashboard";
+import Approvals from "./pages/Approvals";
 import Audit from "./pages/Audit";
+import Incidents from "./pages/Incidents";
+import Infrastructure from "./pages/Infrastructure";
+import ThreatIntelligence from "./pages/ThreatIntelligence";
+import Investigation from "./pages/Investigation";
+import AttackGraph from "./pages/AttackGraph";
+import Automation from "./pages/Automation";
+import Scanner from "./pages/Scanner";
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -32,100 +47,89 @@ function AnimatedRoutes() {
         className="min-h-screen"
       >
         <Routes location={location}>
+          {/* =========================
+              PUBLIC PAGES
+          ========================== */}
           <Route path="/" element={<Home />} />
-
           <Route path="/signin" element={<Signin />} />
-
           <Route path="/signup" element={<Signup />} />
-
           <Route path="/forgot-password" element={<Forget />} />
 
-          <Route path="/dashboard" element={<Dashboard />} />
+          {/* =========================
+              DASHBOARD LAYOUT
+              Sidebar + Topbar
+          ========================== */}
+          <Route element={<DashboardLayout />}>
+            {/* Overview */}
+            <Route path="/dashboard" element={<Dashboard />} />
 
-          <Route path="/audit" element={<Audit />} />
+            {/* Security modules */}
+            <Route path="/audit" element={<Audit />} />
+            <Route path="/incidents" element={<Incidents />} />
+            <Route
+              path="/infrastructure"
+              element={<Infrastructure />}
+            />
+            <Route
+              path="/threat-intelligence"
+              element={<ThreatIntelligence />}
+            />
+            <Route
+              path="/investigation"
+              element={<Investigation />}
+            />
+            <Route
+              path="/attack-graph"
+              element={<AttackGraph />}
+            />
 
-          {/* Temporary route placeholders */}
+            {/* Optional Attack Graph alias */}
+            <Route
+              path="/attackgraph"
+              element={<AttackGraph />}
+            />
+
+            {/* Scanner */}
+            <Route path="/scanner" element={<Scanner />} />
+
+            {/* SOAR / Automation */}
+            <Route path="/automation" element={<Automation />} />
+            <Route path="/response" element={<Automation />} />
+            <Route path="/soar" element={<Automation />} />
+
+            {/* Approvals */}
+            <Route path="/approvals" element={<Approvals />} />
+
+            {/* AI Assistant */}
+            <Route
+              path="/ai-assistant"
+              element={
+                <PagePlaceholder
+                  title="AI Assistant"
+                  description="SAOM-AI assistant integration will be added last."
+                />
+              }
+            />
+
+            {/* Settings */}
+            <Route
+              path="/settings"
+              element={
+                <PagePlaceholder
+                  title="Settings"
+                  description="Settings and profile management will be added next."
+                />
+              }
+            />
+          </Route>
+
+          {/* =========================
+              FALLBACK
+          ========================== */}
           <Route
-            path="/incidents"
-            element={
-              <PagePlaceholder
-                title="Incidents"
-                description="Incident management workspace will be added next."
-              />
-            }
+            path="*"
+            element={<Navigate to="/dashboard" replace />}
           />
-
-          <Route
-            path="/infrastructure"
-            element={
-              <PagePlaceholder
-                title="Infrastructure"
-                description="Infrastructure and asset monitoring will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/threat-intelligence"
-            element={
-              <PagePlaceholder
-                title="Threat Intelligence"
-                description="Threat intelligence workspace will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/investigation"
-            element={
-              <PagePlaceholder
-                title="Investigation"
-                description="Investigation workspace will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/attack-graph"
-            element={
-              <PagePlaceholder
-                title="Attack Graph"
-                description="Attack graph visualization will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/response"
-            element={
-              <PagePlaceholder
-                title="Response & Automation"
-                description="SOAR response workspace will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/approvals"
-            element={
-              <PagePlaceholder
-                title="Approval Queue"
-                description="Approval workflow will be added next."
-              />
-            }
-          />
-
-          <Route
-            path="/ai-assistant"
-            element={
-              <PagePlaceholder
-                title="AI Assistant"
-                description="SAOM-AI assistant integration will be added last."
-              />
-            }
-          />
-
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </motion.div>
     </AnimatePresence>
@@ -147,14 +151,6 @@ function PagePlaceholder({ title, description }) {
         <p className="mt-3 text-sm leading-6 text-slate-500">
           {description}
         </p>
-
-        {/* <button
-          type="button"
-          onClick={() => window.history.back()}
-          className="mt-6 border border-cyan-400/30 px-4 py-2 text-xs text-cyan-300 transition hover:bg-cyan-400/[0.08]"
-        >
-          Go Back
-        </button> */}
       </section>
     </main>
   );

@@ -7,7 +7,7 @@ import {
 
 /* =========================================================
    DASHBOARD
-   ========================================================= */
+========================================================= */
 
 export function getDashboardStats() {
   return apiGet("/api/stats");
@@ -19,7 +19,7 @@ export function getAttackTimeline() {
 
 /* =========================================================
    ALERTS
-   ========================================================= */
+========================================================= */
 
 export function getAlerts(params = "") {
   const query = params ? `?${params}` : "";
@@ -60,7 +60,7 @@ export function deleteAlert(alertId) {
 
 /* =========================================================
    ASSETS
-   ========================================================= */
+========================================================= */
 
 export function getAssets(params = "") {
   const query = params ? `?${params}` : "";
@@ -79,8 +79,16 @@ export function getAssetById(assetId) {
 }
 
 /* =========================================================
+   RISK
+========================================================= */
+
+export function getRiskScore() {
+  return apiGet("/api/risk");
+}
+
+/* =========================================================
    SECURITY AUDIT
-   ========================================================= */
+========================================================= */
 
 export function runSecurityAudit(body = {}) {
   return apiPost("/api/audit/run", {
@@ -117,9 +125,19 @@ export function getAuditReport(auditId) {
   );
 }
 
+export function getAuditReportPDF(auditId) {
+  if (!auditId) {
+    throw new Error("Audit ID is required.");
+  }
+
+  return apiGet(
+    `/api/report/${encodeURIComponent(auditId)}/pdf`
+  );
+}
+
 /* =========================================================
-   SOAR
-   ========================================================= */
+   SOAR / AUTOMATION
+========================================================= */
 
 export function getSOARHealth() {
   return apiGet("/api/soar/health");
@@ -143,7 +161,7 @@ export function getSOARActionById(actionId) {
 
 export function createSOARPlaybook(alertId) {
   if (!alertId) {
-    throw new Error("No alert ID was provided.");
+    throw new Error("Alert ID is required.");
   }
 
   return apiPost(
@@ -151,25 +169,37 @@ export function createSOARPlaybook(alertId) {
   );
 }
 
-export function approveSOARAction(actionId, body = {}) {
+export function approveSOARAction(
+  actionId,
+  body = {}
+) {
   if (!actionId) {
     throw new Error("SOAR action ID is required.");
   }
 
   return apiPost(
     `/api/soar/actions/${encodeURIComponent(actionId)}/approve`,
-    body
+    {
+      approved_by: body.approved_by || "ANALYST",
+      approval_note: body.approval_note || "",
+    }
   );
 }
 
-export function rejectSOARAction(actionId, body = {}) {
+export function rejectSOARAction(
+  actionId,
+  body = {}
+) {
   if (!actionId) {
     throw new Error("SOAR action ID is required.");
   }
 
   return apiPost(
     `/api/soar/actions/${encodeURIComponent(actionId)}/reject`,
-    body
+    {
+      rejected_by: body.rejected_by || "ANALYST",
+      approval_note: body.approval_note || "",
+    }
   );
 }
 
@@ -185,51 +215,45 @@ export function executeSOARAction(actionId) {
 
 /* =========================================================
    INVESTIGATION
-   ========================================================= */
+========================================================= */
 
-export function backtrackAttack(targetAssetId) {
-  if (!targetAssetId) {
-    throw new Error("Target asset ID is required.");
+export function investigateAttack(assetId) {
+  if (!assetId) {
+    throw new Error("Asset ID is required.");
   }
 
-  return apiPost(
-    `/api/investigation/backtrack/${encodeURIComponent(
-      targetAssetId
-    )}`
+  return apiGet(
+    `/api/investigation/asset/${encodeURIComponent(assetId)}`
   );
 }
 
-export function investigateAttack(targetAssetId) {
-  if (!targetAssetId) {
-    throw new Error("Target asset ID is required.");
+/*
+ * The current backend does not expose a separate
+ * /backtrack/:assetId route.
+ *
+ * The investigation endpoint already runs:
+ * - Attack backtracking
+ * - Geo intelligence
+ * - Combined investigation engine
+ */
+
+export function backtrackAttack(assetId) {
+  if (!assetId) {
+    throw new Error("Asset ID is required.");
   }
 
-  return apiPost(
-    `/api/investigation/${encodeURIComponent(targetAssetId)}`
+  return apiGet(
+    `/api/investigation/asset/${encodeURIComponent(assetId)}`
   );
 }
 
 /* =========================================================
-   THREAT SIMULATION
-   ========================================================= */
+   THREAT INTELLIGENCE
+========================================================= */
 
 export function simulateThreat(body = {}) {
   return apiPost("/api/threats/simulate", body);
 }
-
-/* =========================================================
-   ENVIRONMENT SCANNER
-   ========================================================= */
-
-export function scanEnvironment(simulateThreats = true) {
-  return apiPost("/api/scanner/scan", {
-    simulateThreats,
-  });
-}
-
-/* =========================================================
-   GEO INTELLIGENCE
-   ========================================================= */
 
 export function lookupIP(ip) {
   if (!ip) {
@@ -240,3 +264,64 @@ export function lookupIP(ip) {
     `/api/geo-threats/${encodeURIComponent(ip)}`
   );
 }
+
+/* =========================================================
+   ENVIRONMENT SCANNER
+========================================================= */
+
+export function scanEnvironment(simulateThreats = true) {
+  return apiPost("/api/scanner/environment", {
+    simulateThreats,
+  });
+}
+
+/* =========================================================
+   ATTACK GRAPH
+========================================================= */
+
+export function getAttackGraph() {
+  return apiGet("/api/graph");
+}
+
+/* =========================================================
+   DEFAULT EXPORT
+========================================================= */
+
+export default {
+  getDashboardStats,
+  getAttackTimeline,
+
+  getAlerts,
+  getAlertById,
+  updateAlert,
+  deleteAlert,
+
+  getAssets,
+  getAssetById,
+
+  getRiskScore,
+
+  runSecurityAudit,
+  getAuditTriggers,
+  getAuditHistory,
+  getAuditById,
+  getAuditReport,
+  getAuditReportPDF,
+
+  getSOARHealth,
+  getSOARActions,
+  getSOARActionById,
+  createSOARPlaybook,
+  approveSOARAction,
+  rejectSOARAction,
+  executeSOARAction,
+
+  backtrackAttack,
+  investigateAttack,
+
+  simulateThreat,
+  lookupIP,
+  scanEnvironment,
+
+  getAttackGraph,
+};
