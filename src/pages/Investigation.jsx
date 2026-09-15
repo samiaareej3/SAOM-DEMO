@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -18,7 +17,6 @@ import {
   ShieldAlert,
   Terminal,
   User,
-  XCircle,
 } from "lucide-react";
 
 import {
@@ -27,7 +25,9 @@ import {
   investigateAttack,
 } from "../services/dashboardApi";
 
-const SEVERITIES = ["Critical", "High", "Medium", "Low"];
+/* -------------------------------------------------------------------------- */
+/* Constants                                                                  */
+/* -------------------------------------------------------------------------- */
 
 const severityStyles = {
   Critical: "bg-red-500/15 text-red-400 border-red-500/30",
@@ -41,6 +41,10 @@ const statusStyles = {
   Investigating: "bg-cyan-500/15 text-cyan-300 border-cyan-500/20",
   Resolved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
 };
+
+/* -------------------------------------------------------------------------- */
+/* Utility Functions                                                          */
+/* -------------------------------------------------------------------------- */
 
 function getValue(object, keys, fallback = "") {
   for (const key of keys) {
@@ -98,21 +102,94 @@ function formatDate(value) {
   return date.toLocaleString();
 }
 
+function getIncidentTime(incident) {
+  const possibleDate = getValue(incident, [
+    "createdAt",
+    "created_at",
+    "timestamp",
+    "detection_timestamp",
+    "detectionTimestamp",
+    "detectedAt",
+    "detected_at",
+    "detected_on",
+    "createdOn",
+    "created_on",
+    "time",
+    "date",
+  ]);
+
+  const parsedTime = new Date(possibleDate).getTime();
+
+  if (!Number.isNaN(parsedTime) && parsedTime > 0) {
+    return parsedTime;
+  }
+
+  /*
+   * MongoDB ObjectId contains a creation timestamp in its first
+   * eight hexadecimal characters. This is used only as a fallback.
+   */
+  const rawId = getValue(incident, [
+    "_id",
+    "id",
+    "alert_id",
+    "alertId",
+    "incident_id",
+    "incidentId",
+  ]);
+
+  if (
+    typeof rawId === "string" &&
+    /^[a-f\d]{24}$/i.test(rawId)
+  ) {
+    return parseInt(rawId.substring(0, 8), 16) * 1000;
+  }
+
+  return 0;
+}
+
 function extractAlerts(response) {
-  if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.alerts)) return response.alerts;
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response?.data?.alerts)) return response.data.alerts;
-  if (Array.isArray(response?.results)) return response.results;
-  if (Array.isArray(response?.items)) return response.items;
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.alerts)) {
+    return response.alerts;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response?.data?.alerts)) {
+    return response.data.alerts;
+  }
+
+  if (Array.isArray(response?.data?.results)) {
+    return response.data.results;
+  }
+
+  if (Array.isArray(response?.results)) {
+    return response.results;
+  }
+
+  if (Array.isArray(response?.items)) {
+    return response.items;
+  }
 
   return [];
 }
 
-function normalizeIncident(alert, index) {
+function normalizeIncident(alert, index = 0) {
   const id = getValue(
     alert,
-    ["id", "_id", "alert_id", "alertId", "incident_id", "incidentId"],
+    [
+      "id",
+      "_id",
+      "alert_id",
+      "alertId",
+      "incident_id",
+      "incidentId",
+    ],
     `ALERT-${index + 1}`
   );
 
@@ -120,30 +197,66 @@ function normalizeIncident(alert, index) {
     "createdAt",
     "created_at",
     "timestamp",
+    "detection_timestamp",
+    "detectionTimestamp",
     "detectedAt",
     "detected_at",
+    "detected_on",
+    "createdOn",
+    "created_on",
     "time",
+    "date",
   ]);
 
   return {
     ...alert,
+
     id: String(id),
+
     title: getValue(
       alert,
-      ["title", "name", "alert_name", "alertName", "message"],
+      [
+        "title",
+        "name",
+        "alert_name",
+        "alertName",
+        "message",
+      ],
       "Security Alert"
     ),
+
     severity: normalizeSeverity(
-      getValue(alert, ["severity", "priority", "risk_level", "riskLevel"])
+      getValue(alert, [
+        "severity",
+        "priority",
+        "risk_level",
+        "riskLevel",
+      ])
     ),
+
     status: normalizeStatus(
-      getValue(alert, ["status", "state", "incident_status", "incidentStatus"])
+      getValue(alert, [
+        "status",
+        "state",
+        "incident_status",
+        "incidentStatus",
+      ])
     ),
+
     type: getValue(
       alert,
-      ["type", "alert_type", "alertType", "category", "event_type"],
+      [
+        "type",
+        "attack_type",
+        "attackType",
+        "alert_type",
+        "alertType",
+        "category",
+        "event_type",
+      ],
       "SECURITY_EVENT"
     ),
+
     asset: getValue(
       alert,
       [
@@ -160,6 +273,7 @@ function normalizeIncident(alert, index) {
       ],
       "Unknown asset"
     ),
+
     sourceIp: getValue(
       alert,
       [
@@ -167,25 +281,76 @@ function normalizeIncident(alert, index) {
         "sourceIp",
         "src_ip",
         "srcIp",
+        "source_address",
+        "sourceAddress",
         "ip",
         "source",
-        "source_address",
       ],
       "Unknown source"
     ),
+
+    destinationIp: getValue(
+      alert,
+      [
+        "destination_ip",
+        "destinationIp",
+        "dest_ip",
+        "destIp",
+        "destination",
+        "target_ip",
+        "targetIp",
+      ],
+      "Unknown destination"
+    ),
+
     user: getValue(
       alert,
-      ["user", "username", "user_name", "userName", "account"],
+      [
+        "user",
+        "username",
+        "user_name",
+        "userName",
+        "account",
+        "user_account",
+        "userAccount",
+      ],
       "Unknown user"
     ),
+
     description: getValue(
       alert,
-      ["description", "message", "details", "summary"],
+      [
+        "description",
+        "message",
+        "details",
+        "summary",
+        "explanation",
+      ],
       "No additional description is available."
     ),
+
     createdAt,
   };
 }
+
+function extractResultPayload(response) {
+  if (!response) return null;
+
+  return (
+    response?.result ||
+    response?.investigation ||
+    response?.backtrack ||
+    response?.data?.result ||
+    response?.data?.investigation ||
+    response?.data?.backtrack ||
+    response?.data ||
+    response
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reusable Components                                                        */
+/* -------------------------------------------------------------------------- */
 
 function Badge({ children, className = "" }) {
   return (
@@ -197,12 +362,18 @@ function Badge({ children, className = "" }) {
   );
 }
 
-function SectionCard({ title, icon: Icon, children, action }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+  action = null,
+}) {
   return (
     <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5 shadow-xl shadow-black/10">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Icon size={18} className="text-cyan-400" />
+
           <h2 className="text-sm font-bold uppercase tracking-wider text-white">
             {title}
           </h2>
@@ -216,7 +387,12 @@ function SectionCard({ title, icon: Icon, children, action }) {
   );
 }
 
-function StatCard({ label, value, icon: Icon, tone = "cyan" }) {
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  tone = "cyan",
+}) {
   const tones = {
     cyan: "text-cyan-400 bg-cyan-400/10",
     red: "text-red-400 bg-red-400/10",
@@ -227,30 +403,25 @@ function StatCard({ label, value, icon: Icon, tone = "cyan" }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-slate-400">{label}</span>
+        <span className="text-xs text-slate-400">
+          {label}
+        </span>
 
         <div className={`rounded-xl p-2 ${tones[tone]}`}>
           <Icon size={17} />
         </div>
       </div>
 
-      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
+      <p className="mt-3 text-2xl font-bold text-white">
+        {value}
+      </p>
     </div>
   );
 }
 
-function extractResultPayload(response) {
-  if (!response) return null;
-
-  return (
-    response?.result ||
-    response?.investigation ||
-    response?.data?.result ||
-    response?.data?.investigation ||
-    response?.data ||
-    response
-  );
-}
+/* -------------------------------------------------------------------------- */
+/* Main Component                                                             */
+/* -------------------------------------------------------------------------- */
 
 export default function Investigation() {
   const navigate = useNavigate();
@@ -259,21 +430,31 @@ export default function Investigation() {
   const incomingIncident = location.state?.incident || null;
 
   const [incidents, setIncidents] = useState([]);
+
   const [selectedId, setSelectedId] = useState(
-    incomingIncident?.id ? String(incomingIncident.id) : ""
+    incomingIncident?.id
+      ? String(incomingIncident.id)
+      : ""
   );
 
   const [search, setSearch] = useState("");
   const [note, setNote] = useState("");
   const [notes, setNotes] = useState([]);
 
-  const [investigationResult, setInvestigationResult] = useState(null);
-  const [backtrackResult, setBacktrackResult] = useState(null);
+  const [investigationResult, setInvestigationResult] =
+    useState(null);
+
+  const [backtrackResult, setBacktrackResult] =
+    useState(null);
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  /* ------------------------------------------------------------------------ */
+  /* Load and sort incidents                                                  */
+  /* ------------------------------------------------------------------------ */
 
   const loadIncidents = useCallback(async () => {
     setLoading(true);
@@ -281,16 +462,46 @@ export default function Investigation() {
 
     try {
       const response = await getAlerts();
-      const normalized = extractAlerts(response).map(normalizeIncident);
+
+      const normalized = extractAlerts(response)
+        .map((alert, index) =>
+          normalizeIncident(alert, index)
+        )
+        .sort((a, b) => {
+          return getIncidentTime(b) - getIncidentTime(a);
+        });
 
       setIncidents(normalized);
 
-      if (!selectedId && normalized.length > 0) {
+      if (normalized.length > 0) {
+        const incomingId = incomingIncident?.id
+          ? String(incomingIncident.id)
+          : "";
+
+        const incomingExists = normalized.some(
+          (incident) =>
+            String(incident.id) === incomingId
+        );
+
+        /*
+         * If Attack Graph passes an incident, open that incident.
+         * Otherwise, automatically select the newest incident.
+         */
         setSelectedId(
-          incomingIncident?.id
-            ? String(incomingIncident.id)
+          incomingExists
+            ? incomingId
             : String(normalized[0].id)
         );
+      } else if (incomingIncident) {
+        const fallbackIncident = normalizeIncident(
+          incomingIncident,
+          0
+        );
+
+        setIncidents([fallbackIncident]);
+        setSelectedId(String(fallbackIncident.id));
+      } else {
+        setSelectedId("");
       }
     } catch (requestError) {
       setError(
@@ -299,42 +510,58 @@ export default function Investigation() {
       );
 
       if (incomingIncident) {
-        setIncidents([normalizeIncident(incomingIncident, 0)]);
-        setSelectedId(String(incomingIncident.id));
+        const fallbackIncident = normalizeIncident(
+          incomingIncident,
+          0
+        );
+
+        setIncidents([fallbackIncident]);
+        setSelectedId(String(fallbackIncident.id));
       }
     } finally {
       setLoading(false);
     }
-  }, [incomingIncident, selectedId]);
+  }, [incomingIncident]);
 
   useEffect(() => {
     loadIncidents();
   }, [loadIncidents]);
 
+  /* ------------------------------------------------------------------------ */
+  /* Derived data                                                             */
+  /* ------------------------------------------------------------------------ */
+
   const filteredIncidents = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    if (!query) return incidents;
+    if (!query) {
+      return incidents;
+    }
 
-    return incidents.filter((incident) =>
-      [
+    return incidents.filter((incident) => {
+      return [
         incident.id,
         incident.title,
+        incident.type,
         incident.severity,
         incident.status,
         incident.asset,
         incident.sourceIp,
+        incident.destinationIp,
         incident.user,
       ]
         .join(" ")
         .toLowerCase()
-        .includes(query)
-    );
+        .includes(query);
+    });
   }, [incidents, search]);
 
   const selectedIncident = useMemo(() => {
     return (
-      incidents.find((incident) => String(incident.id) === String(selectedId)) ||
+      incidents.find(
+        (incident) =>
+          String(incident.id) === String(selectedId)
+      ) ||
       incidents[0] ||
       null
     );
@@ -343,38 +570,60 @@ export default function Investigation() {
   const summary = useMemo(() => {
     return {
       total: incidents.length,
+
       critical: incidents.filter(
-        (incident) => incident.severity === "Critical"
+        (incident) =>
+          incident.severity === "Critical"
       ).length,
-      active: incidents.filter((incident) => incident.status === "Active")
-        .length,
+
+      active: incidents.filter(
+        (incident) =>
+          incident.status === "Active"
+      ).length,
+
       resolved: incidents.filter(
-        (incident) => incident.status === "Resolved"
+        (incident) =>
+          incident.status === "Resolved"
       ).length,
     };
   }, [incidents]);
 
-  function addNote() {
-    if (!note.trim()) return;
+  /* ------------------------------------------------------------------------ */
+  /* Analyst Notes                                                            */
+  /* ------------------------------------------------------------------------ */
 
-    setNotes((current) => [
-      ...current,
+  function addNote() {
+    const trimmedNote = note.trim();
+
+    if (!trimmedNote) {
+      return;
+    }
+
+    setNotes((currentNotes) => [
+      ...currentNotes,
       {
+        id: `${Date.now()}-${currentNotes.length}`,
         author: "You",
         time: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         }),
-        text: note.trim(),
+        text: trimmedNote,
       },
     ]);
 
     setNote("");
   }
 
+  /* ------------------------------------------------------------------------ */
+  /* Investigation Actions                                                    */
+  /* ------------------------------------------------------------------------ */
+
   async function handleInvestigation() {
     if (!selectedIncident?.asset) {
-      setMessage("No target asset is available for this incident.");
+      setMessage(
+        "No target asset is available for this incident."
+      );
       return;
     }
 
@@ -384,10 +633,17 @@ export default function Investigation() {
     setInvestigationResult(null);
 
     try {
-      const response = await investigateAttack(selectedIncident.asset);
+      const response = await investigateAttack(
+        selectedIncident.asset
+      );
 
-      setInvestigationResult(extractResultPayload(response));
-      setMessage("Investigation completed successfully.");
+      setInvestigationResult(
+        extractResultPayload(response)
+      );
+
+      setMessage(
+        "Investigation completed successfully."
+      );
     } catch (requestError) {
       setError(
         requestError?.message ||
@@ -400,7 +656,9 @@ export default function Investigation() {
 
   async function handleBacktrack() {
     if (!selectedIncident?.asset) {
-      setMessage("No target asset is available for attack backtracking.");
+      setMessage(
+        "No target asset is available for attack backtracking."
+      );
       return;
     }
 
@@ -410,10 +668,17 @@ export default function Investigation() {
     setBacktrackResult(null);
 
     try {
-      const response = await backtrackAttack(selectedIncident.asset);
+      const response = await backtrackAttack(
+        selectedIncident.asset
+      );
 
-      setBacktrackResult(extractResultPayload(response));
-      setMessage("Attack backtracking completed successfully.");
+      setBacktrackResult(
+        extractResultPayload(response)
+      );
+
+      setMessage(
+        "Attack backtracking completed successfully."
+      );
     } catch (requestError) {
       setError(
         requestError?.message ||
@@ -424,9 +689,22 @@ export default function Investigation() {
     }
   }
 
+  function handleIncidentSelect(incidentId) {
+    setSelectedId(String(incidentId));
+    setInvestigationResult(null);
+    setBacktrackResult(null);
+    setMessage("");
+    setError("");
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                   */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <div className="min-h-screen bg-[#08111f] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1600px]">
+        {/* Page Header */}
         <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <button
@@ -449,8 +727,8 @@ export default function Investigation() {
                 </h1>
 
                 <p className="mt-1 text-sm text-slate-400">
-                  Investigate incidents, review backend results, and backtrack
-                  attack activity.
+                  Investigate incidents, review backend results,
+                  and backtrack attack activity.
                 </p>
               </div>
             </div>
@@ -466,6 +744,7 @@ export default function Investigation() {
           </button>
         </div>
 
+        {/* Statistics */}
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
             label="Total Incidents"
@@ -495,19 +774,22 @@ export default function Investigation() {
           />
         </div>
 
+        {/* Notifications */}
         {error && (
-          <div className="mb-6 border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-300">
+          <div className="mb-6 rounded-xl border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-300">
             {error}
           </div>
         )}
 
         {message && (
-          <div className="mb-6 border border-cyan-400/20 bg-cyan-400/[0.06] p-4 text-sm text-cyan-300">
+          <div className="mb-6 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] p-4 text-sm text-cyan-300">
             {message}
           </div>
         )}
 
+        {/* Main Layout */}
         <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+          {/* Incident Sidebar */}
           <aside className="rounded-2xl border border-white/10 bg-[#0d1727] p-4">
             <div className="mb-4">
               <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-white">
@@ -522,7 +804,9 @@ export default function Investigation() {
 
                 <input
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) =>
+                    setSearch(event.target.value)
+                  }
                   placeholder="Search incidents..."
                   className="w-full rounded-xl border border-white/10 bg-[#111a2b] py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/60"
                 />
@@ -536,18 +820,17 @@ export default function Investigation() {
             ) : (
               <div className="space-y-3">
                 {filteredIncidents.map((incident) => {
-                  const active = String(selectedId) === String(incident.id);
+                  const active =
+                    String(selectedId) ===
+                    String(incident.id);
 
                   return (
                     <button
                       type="button"
                       key={incident.id}
-                      onClick={() => {
-                        setSelectedId(String(incident.id));
-                        setInvestigationResult(null);
-                        setBacktrackResult(null);
-                        setMessage("");
-                      }}
+                      onClick={() =>
+                        handleIncidentSelect(incident.id)
+                      }
                       className={`w-full rounded-xl border p-4 text-left transition ${
                         active
                           ? "border-cyan-400/60 bg-cyan-400/10"
@@ -574,8 +857,18 @@ export default function Investigation() {
                         {incident.title}
                       </h3>
 
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {incident.asset}
+                      </p>
+
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge className={severityStyles[incident.severity]}>
+                        <Badge
+                          className={
+                            severityStyles[
+                              incident.severity
+                            ]
+                          }
+                        >
                           {incident.severity}
                         </Badge>
 
@@ -601,6 +894,7 @@ export default function Investigation() {
             )}
           </aside>
 
+          {/* Main Investigation Area */}
           <main className="space-y-6">
             {!selectedIncident ? (
               <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-8 text-center">
@@ -610,13 +904,16 @@ export default function Investigation() {
               </section>
             ) : (
               <>
+                {/* Selected Incident */}
                 <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
                   <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
                     <div>
                       <div className="mb-3 flex flex-wrap items-center gap-2">
                         <Badge
                           className={
-                            severityStyles[selectedIncident.severity]
+                            severityStyles[
+                              selectedIncident.severity
+                            ]
                           }
                         >
                           {selectedIncident.severity} Severity
@@ -624,8 +921,9 @@ export default function Investigation() {
 
                         <Badge
                           className={
-                            statusStyles[selectedIncident.status] ||
-                            statusStyles.Active
+                            statusStyles[
+                              selectedIncident.status
+                            ] || statusStyles.Active
                           }
                         >
                           {selectedIncident.status}
@@ -647,7 +945,9 @@ export default function Investigation() {
 
                     <button
                       type="button"
-                      onClick={() => navigate("/incidents")}
+                      onClick={() =>
+                        navigate("/incidents")
+                      }
                       className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
                     >
                       <Eye size={16} />
@@ -662,7 +962,10 @@ export default function Investigation() {
                       </p>
 
                       <div className="flex items-center gap-2 break-all text-sm font-medium text-white">
-                        <Server size={15} className="text-cyan-400" />
+                        <Server
+                          size={15}
+                          className="shrink-0 text-cyan-400"
+                        />
                         {selectedIncident.asset}
                       </div>
                     </div>
@@ -673,7 +976,10 @@ export default function Investigation() {
                       </p>
 
                       <div className="flex items-center gap-2 break-all font-mono text-sm text-white">
-                        <Network size={15} className="text-cyan-400" />
+                        <Network
+                          size={15}
+                          className="shrink-0 text-cyan-400"
+                        />
                         {selectedIncident.sourceIp}
                       </div>
                     </div>
@@ -684,7 +990,10 @@ export default function Investigation() {
                       </p>
 
                       <div className="flex items-center gap-2 break-all text-sm font-medium text-white">
-                        <Lock size={15} className="text-cyan-400" />
+                        <Lock
+                          size={15}
+                          className="shrink-0 text-cyan-400"
+                        />
                         {selectedIncident.user}
                       </div>
                     </div>
@@ -695,16 +1004,25 @@ export default function Investigation() {
                       </p>
 
                       <div className="flex items-center gap-2 text-sm font-medium text-white">
-                        <Clock3 size={15} className="text-cyan-400" />
-                        {formatDate(selectedIncident.createdAt)}
+                        <Clock3
+                          size={15}
+                          className="shrink-0 text-cyan-400"
+                        />
+                        {formatDate(
+                          selectedIncident.createdAt
+                        )}
                       </div>
                     </div>
                   </div>
                 </section>
 
+                {/* Investigation Actions */}
                 <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
                   <div className="mb-5 flex items-center gap-2">
-                    <Terminal size={18} className="text-cyan-400" />
+                    <Terminal
+                      size={18}
+                      className="text-cyan-400"
+                    />
 
                     <h2 className="text-sm font-bold uppercase tracking-wider text-white">
                       Investigation Actions
@@ -740,71 +1058,117 @@ export default function Investigation() {
                   </div>
                 </section>
 
+                {/* Investigation Result */}
                 {investigationResult && (
-                  <SectionCard title="Investigation Result" icon={Activity}>
+                  <SectionCard
+                    title="Investigation Result"
+                    icon={Activity}
+                  >
                     <pre className="max-h-[500px] overflow-auto rounded-xl border border-white/10 bg-[#0a111d] p-4 text-xs leading-6 text-cyan-200">
-                      {JSON.stringify(investigationResult, null, 2)}
+                      {JSON.stringify(
+                        investigationResult,
+                        null,
+                        2
+                      )}
                     </pre>
                   </SectionCard>
                 )}
 
+                {/* Backtracking Result */}
                 {backtrackResult && (
-                  <SectionCard title="Attack Backtracking Result" icon={Network}>
+                  <SectionCard
+                    title="Attack Backtracking Result"
+                    icon={Network}
+                  >
                     <pre className="max-h-[500px] overflow-auto rounded-xl border border-white/10 bg-[#0a111d] p-4 text-xs leading-6 text-violet-200">
-                      {JSON.stringify(backtrackResult, null, 2)}
+                      {JSON.stringify(
+                        backtrackResult,
+                        null,
+                        2
+                      )}
                     </pre>
                   </SectionCard>
                 )}
 
+                {/* Context and Summary */}
                 <div className="grid gap-6 lg:grid-cols-2">
-                  <SectionCard title="Incident Context" icon={FileText}>
+                  <SectionCard
+                    title="Incident Context"
+                    icon={FileText}
+                  >
                     <div className="space-y-3">
                       <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">Alert Type</p>
+                        <p className="text-xs text-slate-500">
+                          Alert Type
+                        </p>
+
                         <p className="mt-1 text-sm font-semibold text-white">
                           {selectedIncident.type}
                         </p>
                       </div>
 
                       <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">Severity</p>
+                        <p className="text-xs text-slate-500">
+                          Severity
+                        </p>
+
                         <p className="mt-1 text-sm font-semibold text-white">
                           {selectedIncident.severity}
                         </p>
                       </div>
 
                       <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">Status</p>
+                        <p className="text-xs text-slate-500">
+                          Status
+                        </p>
+
                         <p className="mt-1 text-sm font-semibold text-white">
                           {selectedIncident.status}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-[#0d1727] p-3">
+                        <p className="text-xs text-slate-500">
+                          Destination IP
+                        </p>
+
+                        <p className="mt-1 break-all font-mono text-sm font-semibold text-white">
+                          {selectedIncident.destinationIp}
                         </p>
                       </div>
                     </div>
                   </SectionCard>
 
-                  <SectionCard title="Investigation Summary" icon={Terminal}>
+                  <SectionCard
+                    title="Investigation Summary"
+                    icon={Terminal}
+                  >
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between rounded-xl bg-[#0d1727] p-3">
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
                         <span className="text-sm text-slate-400">
                           Investigation Status
                         </span>
 
                         <span className="text-sm font-semibold text-cyan-300">
-                          {investigationResult ? "Completed" : "Not Started"}
+                          {investigationResult
+                            ? "Completed"
+                            : "Not Started"}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between rounded-xl bg-[#0d1727] p-3">
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
                         <span className="text-sm text-slate-400">
                           Backtracking Status
                         </span>
 
                         <span className="text-sm font-semibold text-violet-300">
-                          {backtrackResult ? "Completed" : "Not Started"}
+                          {backtrackResult
+                            ? "Completed"
+                            : "Not Started"}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between rounded-xl bg-[#0d1727] p-3">
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
                         <span className="text-sm text-slate-400">
                           Analyst Notes
                         </span>
@@ -817,7 +1181,11 @@ export default function Investigation() {
                   </SectionCard>
                 </div>
 
-                <SectionCard title="Analyst Notes" icon={User}>
+                {/* Analyst Notes */}
+                <SectionCard
+                  title="Analyst Notes"
+                  icon={User}
+                >
                   <div className="space-y-4">
                     {notes.length === 0 && (
                       <div className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-500">
@@ -825,9 +1193,9 @@ export default function Investigation() {
                       </div>
                     )}
 
-                    {notes.map((item, index) => (
+                    {notes.map((item) => (
                       <div
-                        key={`${item.time}-${index}`}
+                        key={item.id}
                         className="rounded-xl border border-white/10 bg-[#0d1727] p-4"
                       >
                         <div className="mb-2 flex items-center justify-between gap-3">
@@ -855,7 +1223,17 @@ export default function Investigation() {
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <textarea
                         value={note}
-                        onChange={(event) => setNote(event.target.value)}
+                        onChange={(event) =>
+                          setNote(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === "Enter" &&
+                            event.ctrlKey
+                          ) {
+                            addNote();
+                          }
+                        }}
                         placeholder="Add an investigation note..."
                         rows={3}
                         className="min-h-[90px] flex-1 resize-y rounded-xl border border-white/10 bg-[#0d1727] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/60"
@@ -871,6 +1249,10 @@ export default function Investigation() {
                         Add Note
                       </button>
                     </div>
+
+                    <p className="text-xs text-slate-600">
+                      Tip: Press Ctrl + Enter to add a note.
+                    </p>
                   </div>
                 </SectionCard>
               </>

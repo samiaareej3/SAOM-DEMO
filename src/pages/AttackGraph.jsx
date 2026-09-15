@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -15,15 +15,19 @@ import {
   CheckCircle2,
   CircleDot,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 
-const GRAPH_NODES = [
+const NODE_WIDTH = 170;
+const NODE_HEIGHT = 76;
+
+const FALLBACK_NODES = [
   {
     id: "attacker",
     label: "External Attacker",
     type: "Threat Actor",
     icon: Globe,
-    x: 70,
+    x: 90,
     y: 180,
     color: "#ef4444",
   },
@@ -32,7 +36,7 @@ const GRAPH_NODES = [
     label: "185.199.110.42",
     type: "Malicious IP",
     icon: Globe,
-    x: 280,
+    x: 290,
     y: 180,
     color: "#f97316",
   },
@@ -50,7 +54,7 @@ const GRAPH_NODES = [
     label: "PowerShell",
     type: "Execution",
     icon: Terminal,
-    x: 700,
+    x: 690,
     y: 180,
     color: "#06b6d4",
   },
@@ -59,7 +63,7 @@ const GRAPH_NODES = [
     label: "Remote Payload",
     type: "Malware",
     icon: ShieldAlert,
-    x: 910,
+    x: 890,
     y: 180,
     color: "#ef4444",
   },
@@ -77,7 +81,7 @@ const GRAPH_NODES = [
     label: "Finance Database",
     type: "Sensitive Asset",
     icon: Database,
-    x: 700,
+    x: 690,
     y: 390,
     color: "#ec4899",
   },
@@ -86,13 +90,13 @@ const GRAPH_NODES = [
     label: "Response Action",
     type: "Endpoint Isolation",
     icon: Lock,
-    x: 910,
+    x: 890,
     y: 390,
     color: "#22c55e",
   },
 ];
 
-const GRAPH_EDGES = [
+const FALLBACK_EDGES = [
   ["attacker", "ip"],
   ["ip", "endpoint"],
   ["endpoint", "powershell"],
@@ -102,8 +106,16 @@ const GRAPH_EDGES = [
   ["payload", "lockdown"],
 ];
 
-const NODE_WIDTH = 170;
-const NODE_HEIGHT = 76;
+function unwrap(response) {
+  return response?.data?.data || response?.data || response || {};
+}
+
+function getAlerts(scanData) {
+  if (Array.isArray(scanData?.alerts)) return scanData.alerts;
+  if (Array.isArray(scanData?.findings)) return scanData.findings;
+  if (Array.isArray(scanData?.results)) return scanData.results;
+  return [];
+}
 
 function NodeCard({ node, selected, onClick }) {
   const Icon = node.icon;
@@ -135,8 +147,13 @@ function NodeCard({ node, selected, onClick }) {
       </div>
 
       <div className="min-w-0">
-        <p className="truncate text-xs font-bold text-white">{node.label}</p>
-        <p className="mt-1 text-[10px] text-slate-500">{node.type}</p>
+        <p className="truncate text-xs font-bold text-white">
+          {node.label}
+        </p>
+
+        <p className="mt-1 text-[10px] text-slate-500">
+          {node.type}
+        </p>
       </div>
     </button>
   );
@@ -154,6 +171,7 @@ function StatCard({ label, value, icon: Icon, tone = "cyan" }) {
     <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-4">
       <div className="flex items-center justify-between">
         <span className="text-xs text-slate-400">{label}</span>
+
         <div className={`rounded-xl p-2 ${tones[tone]}`}>
           <Icon size={17} />
         </div>
@@ -170,27 +188,129 @@ export default function AttackGraph() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  const [scanData, setScanData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  async function loadLatestScan() {
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        "http://localhost:5000/api/scanner/latest"
+      );
+
+      if (!response.ok) {
+        throw new Error("Latest scan could not be loaded.");
+      }
+
+      const data = await response.json();
+      setScanData(unwrap(data));
+    } catch (error) {
+      console.warn("Attack graph is using fallback data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLatestScan();
+  }, []);
+
+  const alerts = getAlerts(scanData);
+
+  const graphNodes = useMemo(() => {
+    if (alerts.length === 0) {
+      return FALLBACK_NODES;
+    }
+
+    const firstAlert = alerts[0] || {};
+
+    const sourceIp =
+      firstAlert.source_ip ||
+      firstAlert.sourceIp ||
+      firstAlert.source ||
+      "External Source";
+
+    const destination =
+      firstAlert.hostname ||
+      firstAlert.asset_id ||
+      firstAlert.assetId ||
+      firstAlert.destination_host ||
+      firstAlert.destination ||
+      "Monitored Endpoint";
+
+    const attackType =
+      firstAlert.attack_type ||
+      firstAlert.attackType ||
+      firstAlert.type ||
+      firstAlert.alert_type ||
+      "Security Threat";
+
+    return [
+      {
+        ...FALLBACK_NODES[0],
+        label: "External Attacker",
+      },
+      {
+        ...FALLBACK_NODES[1],
+        label: sourceIp,
+      },
+      {
+        ...FALLBACK_NODES[2],
+        label: destination,
+      },
+      {
+        ...FALLBACK_NODES[3],
+        label: attackType,
+      },
+      {
+        ...FALLBACK_NODES[4],
+        label: "Detected Threat",
+      },
+      {
+        ...FALLBACK_NODES[5],
+        label: "Affected Account",
+      },
+      {
+        ...FALLBACK_NODES[6],
+        label: "Sensitive Asset",
+      },
+      {
+        ...FALLBACK_NODES[7],
+        label: "Response Action",
+      },
+    ];
+  }, [alerts]);
+
+  const graphEdges = FALLBACK_EDGES;
 
   const filteredNodes = useMemo(() => {
     const query = search.toLowerCase().trim();
 
-    return GRAPH_NODES.filter((node) => {
+    return graphNodes.filter((node) => {
       const matchesSearch =
         !query ||
-        `${node.label} ${node.type}`.toLowerCase().includes(query);
+        `${node.label} ${node.type}`
+          .toLowerCase()
+          .includes(query);
 
-      const matchesFilter = filter === "All" || node.type === filter;
+      const matchesFilter =
+        filter === "All" || node.type === filter;
 
       return matchesSearch && matchesFilter;
     });
-  }, [search, filter]);
+  }, [graphNodes, search, filter]);
 
-  const visibleNodeIds = new Set(filteredNodes.map((node) => node.id));
+  const visibleNodeIds = new Set(
+    filteredNodes.map((node) => node.id)
+  );
+
+  const threatNodes = alerts.length > 0 ? alerts.length : 2;
+  const affectedAssets = alerts.length > 0 ? alerts.length : 3;
 
   return (
     <div className="min-h-screen bg-[#08111f] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1600px]">
-        {/* Header */}
         <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <button
@@ -210,6 +330,7 @@ export default function AttackGraph() {
                 <h1 className="text-2xl font-bold sm:text-3xl">
                   Attack Graph
                 </h1>
+
                 <p className="mt-1 text-sm text-slate-400">
                   Visualize attack paths, compromised assets, and response actions.
                 </p>
@@ -217,30 +338,46 @@ export default function AttackGraph() {
             </div>
           </div>
 
-          <button
-            onClick={() => setSelectedNode(null)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
-          >
-            <CircleDot size={16} />
-            Clear Selection
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={loadLatestScan}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+
+            <button
+              onClick={() => setSelectedNode(null)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
+            >
+              <CircleDot size={16} />
+              Clear Selection
+            </button>
+          </div>
         </div>
 
-        {/* Stats */}
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard label="Graph Nodes" value={GRAPH_NODES.length} icon={Network} />
+          <StatCard
+            label="Graph Nodes"
+            value={graphNodes.length}
+            icon={Network}
+          />
+
           <StatCard
             label="Threat Nodes"
-            value="2"
+            value={threatNodes}
             icon={ShieldAlert}
             tone="red"
           />
+
           <StatCard
             label="Affected Assets"
-            value="3"
+            value={affectedAssets}
             icon={Server}
             tone="orange"
           />
+
           <StatCard
             label="Response Actions"
             value="1"
@@ -250,7 +387,6 @@ export default function AttackGraph() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          {/* Graph area */}
           <section className="min-w-0 rounded-2xl border border-white/10 bg-[#0d1727] p-4 sm:p-5">
             <div className="mb-5 flex flex-col gap-3 lg:flex-row">
               <div className="relative flex-1">
@@ -282,7 +418,9 @@ export default function AttackGraph() {
                 <option value="Malware">Malware</option>
                 <option value="User Account">User Account</option>
                 <option value="Sensitive Asset">Sensitive Asset</option>
-                <option value="Endpoint Isolation">Endpoint Isolation</option>
+                <option value="Endpoint Isolation">
+                  Endpoint Isolation
+                </option>
               </select>
             </div>
 
@@ -319,9 +457,14 @@ export default function AttackGraph() {
                     </marker>
                   </defs>
 
-                  {GRAPH_EDGES.map(([fromId, toId]) => {
-                    const from = GRAPH_NODES.find((node) => node.id === fromId);
-                    const to = GRAPH_NODES.find((node) => node.id === toId);
+                  {graphEdges.map(([fromId, toId]) => {
+                    const from = graphNodes.find(
+                      (node) => node.id === fromId
+                    );
+
+                    const to = graphNodes.find(
+                      (node) => node.id === toId
+                    );
 
                     if (
                       !from ||
@@ -363,7 +506,11 @@ export default function AttackGraph() {
                 ))}
 
                 <div className="absolute bottom-4 left-4 rounded-xl border border-white/10 bg-[#111a2b]/95 px-3 py-2 text-xs text-slate-400">
-                  Select any node to inspect details
+                  {loading
+                    ? "Loading latest scan..."
+                    : alerts.length > 0
+                      ? "Connected to latest scanner result"
+                      : "Showing fallback attack graph"}
                 </div>
               </div>
             </div>
@@ -373,14 +520,17 @@ export default function AttackGraph() {
                 <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
                 Threat
               </div>
+
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
                 Network
               </div>
+
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
                 Execution
               </div>
+
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                 Response
@@ -388,11 +538,11 @@ export default function AttackGraph() {
             </div>
           </section>
 
-          {/* Details panel */}
           <aside className="space-y-6">
             <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
               <div className="mb-5 flex items-center gap-2">
                 <ShieldAlert size={18} className="text-cyan-400" />
+
                 <h2 className="text-sm font-bold uppercase tracking-wider">
                   Node Details
                 </h2>
@@ -408,13 +558,17 @@ export default function AttackGraph() {
                         color: selectedNode.color,
                       }}
                     >
-                      <selectedNode.icon size={24} />
+                      {(() => {
+                        const Icon = selectedNode.icon;
+                        return <Icon size={24} />;
+                      })()}
                     </div>
 
                     <div>
                       <p className="text-xs text-slate-500">
                         {selectedNode.type}
                       </p>
+
                       <h3 className="mt-1 text-lg font-bold text-white">
                         {selectedNode.label}
                       </h3>
@@ -423,31 +577,44 @@ export default function AttackGraph() {
 
                   <div className="space-y-3">
                     <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">Node ID</p>
+                      <p className="text-xs text-slate-500">
+                        Node ID
+                      </p>
+
                       <p className="mt-1 font-mono text-sm text-cyan-300">
                         {selectedNode.id}
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">Risk Status</p>
+                      <p className="text-xs text-slate-500">
+                        Risk Status
+                      </p>
+
                       <p className="mt-1 text-sm font-semibold text-orange-300">
                         Requires Review
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">Recommended Action</p>
+                      <p className="text-xs text-slate-500">
+                        Recommended Action
+                      </p>
+
                       <p className="mt-1 text-sm leading-6 text-slate-300">
-                        Investigate related events and verify whether the
-                        activity is authorized.
+                        Investigate related events and verify whether
+                        the activity is authorized.
                       </p>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-white/10 bg-[#0d1727] p-6 text-center">
-                  <Network className="mx-auto text-slate-600" size={32} />
+                  <Network
+                    className="mx-auto text-slate-600"
+                    size={32}
+                  />
+
                   <p className="mt-3 text-sm text-slate-400">
                     Select a node from the graph to view its details.
                   </p>
@@ -457,7 +624,11 @@ export default function AttackGraph() {
 
             <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
               <div className="mb-4 flex items-center gap-2">
-                <AlertTriangle size={18} className="text-orange-400" />
+                <AlertTriangle
+                  size={18}
+                  className="text-orange-400"
+                />
+
                 <h2 className="text-sm font-bold uppercase tracking-wider">
                   Attack Path Summary
                 </h2>
@@ -466,17 +637,22 @@ export default function AttackGraph() {
               <div className="space-y-3">
                 {[
                   "External attacker identified",
-                  "Malicious IP contacted endpoint",
-                  "PowerShell execution detected",
-                  "Remote payload downloaded",
+                  "Malicious source contacted endpoint",
+                  "Threat execution detected",
+                  "Potential payload activity detected",
                   "Endpoint isolation recommended",
                 ].map((item, index) => (
-                  <div key={item} className="flex items-start gap-3">
+                  <div
+                    key={item}
+                    className="flex items-start gap-3"
+                  >
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-xs font-bold text-cyan-300">
                       {index + 1}
                     </div>
 
-                    <p className="text-sm leading-6 text-slate-400">{item}</p>
+                    <p className="text-sm leading-6 text-slate-400">
+                      {item}
+                    </p>
                   </div>
                 ))}
               </div>
