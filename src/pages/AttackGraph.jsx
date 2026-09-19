@@ -1,673 +1,965 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
-  ArrowLeft,
-  Network,
-  Search,
-  ShieldAlert,
-  Server,
-  User,
-  Globe,
-  Database,
-  Terminal,
-  Lock,
   AlertTriangle,
-  CheckCircle2,
-  CircleDot,
-  ChevronRight,
+  Crosshair,
+  Database,
+  Globe,
+  Lock,
   RefreshCw,
+  Server,
+  ShieldAlert,
+  Terminal,
+  User,
 } from "lucide-react";
 
-const NODE_WIDTH = 170;
-const NODE_HEIGHT = 76;
+import { getAttackGraph } from "../services/dashboardApi";
 
-const FALLBACK_NODES = [
-  {
-    id: "attacker",
-    label: "External Attacker",
-    type: "Threat Actor",
-    icon: Globe,
-    x: 90,
-    y: 180,
-    color: "#ef4444",
-  },
-  {
-    id: "ip",
-    label: "185.199.110.42",
-    type: "Malicious IP",
-    icon: Globe,
-    x: 290,
-    y: 180,
-    color: "#f97316",
-  },
-  {
-    id: "endpoint",
-    label: "WS-FIN-024",
-    type: "Compromised Endpoint",
-    icon: Server,
-    x: 490,
-    y: 180,
-    color: "#eab308",
-  },
-  {
-    id: "powershell",
-    label: "PowerShell",
-    type: "Execution",
-    icon: Terminal,
-    x: 690,
-    y: 180,
-    color: "#06b6d4",
-  },
-  {
-    id: "payload",
-    label: "Remote Payload",
-    type: "Malware",
-    icon: ShieldAlert,
-    x: 890,
-    y: 180,
-    color: "#ef4444",
-  },
-  {
-    id: "account",
-    label: "Finance Account",
-    type: "User Account",
-    icon: User,
-    x: 490,
-    y: 390,
-    color: "#8b5cf6",
-  },
-  {
-    id: "database",
-    label: "Finance Database",
-    type: "Sensitive Asset",
-    icon: Database,
-    x: 690,
-    y: 390,
-    color: "#ec4899",
-  },
-  {
-    id: "lockdown",
-    label: "Response Action",
-    type: "Endpoint Isolation",
-    icon: Lock,
-    x: 890,
-    y: 390,
-    color: "#22c55e",
-  },
-];
+import {
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PageHeader,
+  Panel,
+  SearchInput,
+  Select,
+  StatCard,
+} from "../components/ui";
 
-const FALLBACK_EDGES = [
-  ["attacker", "ip"],
-  ["ip", "endpoint"],
-  ["endpoint", "powershell"],
-  ["powershell", "payload"],
-  ["endpoint", "account"],
-  ["account", "database"],
-  ["payload", "lockdown"],
-];
+/* =========================================================
+   GRAPH CONSTANTS  (unchanged geometry contract)
+========================================================= */
 
-function unwrap(response) {
-  return response?.data?.data || response?.data || response || {};
+const NODE_WIDTH = 190;
+const NODE_HEIGHT = 82;
+
+const CANVAS_WIDTH = 1200;
+const CANVAS_HEIGHT = 650;
+
+const ICON_MAP = {
+  "Threat Actor": Globe,
+  "Malicious IP": Globe,
+  "Compromised Endpoint": Server,
+  Execution: Terminal,
+  Malware: ShieldAlert,
+  "User Account": User,
+  "Sensitive Asset": Database,
+  "Endpoint Isolation": Lock,
+  "Security Event": AlertTriangle,
+};
+
+/*
+ * Kind colours restated for a light canvas: saturated enough to carry meaning
+ * on white, muted enough that ten of them on screen do not fight.
+ */
+const NODE_COLORS = {
+  source: "#DC2626",
+  asset: "#CA8A04",
+  execution: "#EA580C",
+  response: "#059669",
+  default: "#4F46E5",
+};
+
+const KIND_LABEL = {
+  source: "Threat origin",
+  asset: "Affected asset",
+  execution: "Execution",
+  response: "Response",
+  default: "Event",
+};
+
+/* =========================================================
+   HELPERS  (unchanged)
+========================================================= */
+
+function normalizeGraphResponse(response) {
+  const root =
+    response?.data ||
+    response?.result ||
+    response ||
+    {};
+
+  return {
+    nodes: Array.isArray(root.nodes)
+      ? root.nodes
+      : [],
+
+    edges: Array.isArray(root.edges)
+      ? root.edges
+      : [],
+
+    stats:
+      root.stats &&
+      typeof root.stats === "object"
+        ? root.stats
+        : {},
+  };
 }
 
-function getAlerts(scanData) {
-  if (Array.isArray(scanData?.alerts)) return scanData.alerts;
-  if (Array.isArray(scanData?.findings)) return scanData.findings;
-  if (Array.isArray(scanData?.results)) return scanData.results;
-  return [];
-}
-
-function NodeCard({ node, selected, onClick }) {
-  const Icon = node.icon;
+function getNodeColor(node) {
+  if (
+    node?.color &&
+    typeof node.color === "string"
+  ) {
+    return node.color;
+  }
 
   return (
-    <button
-      onClick={() => onClick(node)}
-      className={`absolute flex items-center gap-3 rounded-xl border p-3 text-left transition ${
-        selected
-          ? "border-cyan-300 bg-cyan-400/15 shadow-lg shadow-cyan-400/10"
-          : "border-white/10 bg-[#111a2b] hover:border-cyan-400/50"
-      }`}
-      style={{
-        left: node.x,
-        top: node.y,
-        width: NODE_WIDTH,
-        minHeight: NODE_HEIGHT,
-        transform: "translate(-50%, -50%)",
-      }}
-    >
-      <div
-        className="rounded-lg p-2"
-        style={{
-          backgroundColor: `${node.color}18`,
-          color: node.color,
-        }}
-      >
-        <Icon size={19} />
-      </div>
-
-      <div className="min-w-0">
-        <p className="truncate text-xs font-bold text-white">
-          {node.label}
-        </p>
-
-        <p className="mt-1 text-[10px] text-slate-500">
-          {node.type}
-        </p>
-      </div>
-    </button>
+    NODE_COLORS[node?.kind] ||
+    NODE_COLORS.default
   );
 }
 
-function StatCard({ label, value, icon: Icon, tone = "cyan" }) {
-  const tones = {
-    cyan: "bg-cyan-400/10 text-cyan-400",
-    red: "bg-red-400/10 text-red-400",
-    orange: "bg-orange-400/10 text-orange-400",
-    green: "bg-emerald-400/10 text-emerald-400",
-  };
+function getNodeIcon(node) {
+  return (
+    ICON_MAP[node?.type] ||
+    ShieldAlert
+  );
+}
+
+function getEdgeFrom(edge) {
+  if (!edge) return null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">{label}</span>
+    edge.from ??
+    edge.source ??
+    edge.source_id ??
+    null
+  );
+}
 
-        <div className={`rounded-xl p-2 ${tones[tone]}`}>
-          <Icon size={17} />
-        </div>
-      </div>
+function getEdgeTo(edge) {
+  if (!edge) return null;
 
-      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
+  return (
+    edge.to ??
+    edge.target ??
+    edge.target_id ??
+    null
+  );
+}
+
+function getNodePosition(index, total) {
+  /*
+   * Arrange the graph in horizontal layers.
+   * This keeps larger graphs readable without
+   * relying on fixed demo coordinates.
+   */
+
+  const columns = Math.min(
+    5,
+    Math.max(1, Math.ceil(Math.sqrt(total)))
+  );
+
+  const rows = Math.ceil(
+    total / columns
+  );
+
+  const horizontalGap =
+    CANVAS_WIDTH / (columns + 1);
+
+  const verticalGap =
+    CANVAS_HEIGHT / (rows + 1);
+
+  const column =
+    index % columns;
+
+  const row =
+    Math.floor(index / columns);
+
+  return {
+    x:
+      horizontalGap *
+      (column + 1),
+
+    y:
+      verticalGap *
+      (row + 1),
+  };
+}
+
+function prepareNodes(nodes) {
+  return nodes.map(
+    (node, index) => {
+      const Icon =
+        getNodeIcon(node);
+
+      const position =
+        getNodePosition(
+          index,
+          nodes.length
+        );
+
+      return {
+        ...node,
+
+        id:
+          node.id ||
+          `node-${index}`,
+
+        label:
+          node.label ||
+          node.name ||
+          node.id ||
+          "Unknown Node",
+
+        type:
+          node.type ||
+          "Security Event",
+
+        kind:
+          node.kind ||
+          "default",
+
+        icon: Icon,
+
+        color:
+          getNodeColor(node),
+
+        x:
+          node.x ??
+          position.x,
+
+        y:
+          node.y ??
+          position.y,
+      };
+    }
+  );
+}
+
+/* =========================================================
+   GRAPH CANVAS
+
+   Rendered as one SVG so edges and nodes share a coordinate
+   space. Nodes are buttons in the accessibility tree via
+   role + tabIndex, so the graph is keyboard reachable.
+========================================================= */
+
+function GraphCanvas({ nodes, edges, nodeMap, selectedId, onSelect }) {
+  return (
+    <div className="overflow-auto rounded-lg border border-slate-200 bg-slate-50/60">
+      <svg
+        viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+        className="h-[620px] w-full min-w-[860px]"
+        role="img"
+        aria-label={`Attack graph with ${nodes.length} nodes and ${edges.length} relationships`}
+      >
+        <defs>
+          <pattern
+            id="graph-grid"
+            width="28"
+            height="28"
+            patternUnits="userSpaceOnUse"
+          >
+            <circle cx="1" cy="1" r="1" fill="#DDE2EA" />
+          </pattern>
+
+          <marker
+            id="graph-arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#94A3B8" />
+          </marker>
+
+          <marker
+            id="graph-arrow-active"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 z" fill="#4F46E5" />
+          </marker>
+        </defs>
+
+        <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="url(#graph-grid)" />
+
+        {/* ------------------------------------------------------- edges */}
+
+        {edges.map((edge, index) => {
+          const from = nodeMap.get(String(edge.from));
+          const to = nodeMap.get(String(edge.to));
+
+          if (!from || !to) return null;
+
+          const active =
+            selectedId &&
+            (String(edge.from) === String(selectedId) ||
+              String(edge.to) === String(selectedId));
+
+          const midX = (from.x + to.x) / 2;
+
+          return (
+            <path
+              key={`${edge.from}-${edge.to}-${index}`}
+              d={`M${from.x} ${from.y} C${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
+              fill="none"
+              stroke={active ? "#4F46E5" : "#CBD5E1"}
+              strokeWidth={active ? 2 : 1.5}
+              markerEnd={`url(#${active ? "graph-arrow-active" : "graph-arrow"})`}
+            >
+              <title>{`${from.label} → ${to.label}`}</title>
+            </path>
+          );
+        })}
+
+        {/* ------------------------------------------------------- nodes */}
+
+        {nodes.map((node) => {
+          const Icon = node.icon;
+
+          const selected = String(node.id) === String(selectedId);
+
+          const x = node.x - NODE_WIDTH / 2;
+          const y = node.y - NODE_HEIGHT / 2;
+
+          return (
+            <g
+              key={node.id}
+              transform={`translate(${x} ${y})`}
+              role="button"
+              tabIndex={0}
+              aria-label={`${node.label}, ${node.type}`}
+              onClick={() => onSelect(node)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(node);
+                }
+              }}
+              className="cursor-pointer focus:outline-none"
+            >
+              <rect
+                width={NODE_WIDTH}
+                height={NODE_HEIGHT}
+                rx="10"
+                fill="#FFFFFF"
+                stroke={selected ? "#4F46E5" : "#E4E8EE"}
+                strokeWidth={selected ? 2 : 1}
+                style={{
+                  filter: selected
+                    ? "drop-shadow(0 6px 14px rgba(79,70,229,.18))"
+                    : "drop-shadow(0 1px 2px rgba(15,23,42,.06))",
+                }}
+              />
+
+              <rect width="4" height={NODE_HEIGHT} rx="2" fill={node.color} />
+
+              <svg x="18" y="16" width="18" height="18" viewBox="0 0 24 24">
+                <Icon size={24} color={node.color} strokeWidth={1.9} />
+              </svg>
+
+              <text
+                x="18"
+                y="52"
+                className="fill-slate-900 text-[13px] font-medium"
+              >
+                {String(node.label).length > 20
+                  ? `${String(node.label).slice(0, 19)}…`
+                  : node.label}
+              </text>
+
+              <text x="18" y="68" className="fill-slate-400 text-[11px]">
+                {String(node.type).length > 24
+                  ? `${String(node.type).slice(0, 23)}…`
+                  : node.type}
+              </text>
+
+              <title>{`${node.label} — ${node.type}`}</title>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
 
 export default function AttackGraph() {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const [selectedNode, setSelectedNode] = useState(null);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("All");
-  const [scanData, setScanData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [
+    graphData,
+    setGraphData,
+  ] = useState({
+    nodes: [],
+    edges: [],
+    stats: {},
+  });
 
-  async function loadLatestScan() {
+  const [
+    selectedNode,
+    setSelectedNode,
+  ] = useState(null);
+
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
+  const [
+    filter,
+    setFilter,
+  ] = useState("All");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  async function loadAttackGraph() {
     setLoading(true);
+    setError("");
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/scanner/latest"
+      const response =
+        await getAttackGraph();
+
+      const normalized =
+        normalizeGraphResponse(
+          response
+        );
+
+      setGraphData(
+        normalized
       );
 
-      if (!response.ok) {
-        throw new Error("Latest scan could not be loaded.");
-      }
+      setSelectedNode(
+        null
+      );
+    } catch (err) {
+      console.error(
+        "Failed to load attack graph:",
+        err
+      );
 
-      const data = await response.json();
-      setScanData(unwrap(data));
-    } catch (error) {
-      console.warn("Attack graph is using fallback data:", error);
+      setError(
+        err?.message ||
+          "Failed to load attack graph."
+      );
+
+      setGraphData({
+        nodes: [],
+        edges: [],
+        stats: {},
+      });
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadLatestScan();
+    loadAttackGraph();
   }, []);
 
-  const alerts = getAlerts(scanData);
-
-  const graphNodes = useMemo(() => {
-    if (alerts.length === 0) {
-      return FALLBACK_NODES;
-    }
-
-    const firstAlert = alerts[0] || {};
-
-    const sourceIp =
-      firstAlert.source_ip ||
-      firstAlert.sourceIp ||
-      firstAlert.source ||
-      "External Source";
-
-    const destination =
-      firstAlert.hostname ||
-      firstAlert.asset_id ||
-      firstAlert.assetId ||
-      firstAlert.destination_host ||
-      firstAlert.destination ||
-      "Monitored Endpoint";
-
-    const attackType =
-      firstAlert.attack_type ||
-      firstAlert.attackType ||
-      firstAlert.type ||
-      firstAlert.alert_type ||
-      "Security Threat";
-
-    return [
-      {
-        ...FALLBACK_NODES[0],
-        label: "External Attacker",
-      },
-      {
-        ...FALLBACK_NODES[1],
-        label: sourceIp,
-      },
-      {
-        ...FALLBACK_NODES[2],
-        label: destination,
-      },
-      {
-        ...FALLBACK_NODES[3],
-        label: attackType,
-      },
-      {
-        ...FALLBACK_NODES[4],
-        label: "Detected Threat",
-      },
-      {
-        ...FALLBACK_NODES[5],
-        label: "Affected Account",
-      },
-      {
-        ...FALLBACK_NODES[6],
-        label: "Sensitive Asset",
-      },
-      {
-        ...FALLBACK_NODES[7],
-        label: "Response Action",
-      },
-    ];
-  }, [alerts]);
-
-  const graphEdges = FALLBACK_EDGES;
-
-  const filteredNodes = useMemo(() => {
-    const query = search.toLowerCase().trim();
-
-    return graphNodes.filter((node) => {
-      const matchesSearch =
-        !query ||
-        `${node.label} ${node.type}`
-          .toLowerCase()
-          .includes(query);
-
-      const matchesFilter =
-        filter === "All" || node.type === filter;
-
-      return matchesSearch && matchesFilter;
-    });
-  }, [graphNodes, search, filter]);
-
-  const visibleNodeIds = new Set(
-    filteredNodes.map((node) => node.id)
+  const graphNodes = useMemo(
+    () =>
+      prepareNodes(
+        graphData.nodes
+      ),
+    [graphData.nodes]
   );
 
-  const threatNodes = alerts.length > 0 ? alerts.length : 2;
-  const affectedAssets = alerts.length > 0 ? alerts.length : 3;
+  const graphEdges = useMemo(
+    () =>
+      graphData.edges
+        .map((edge) => ({
+          from:
+            getEdgeFrom(edge),
+
+          to:
+            getEdgeTo(edge),
+
+          metadata:
+            edge.metadata ||
+            {},
+        }))
+        .filter(
+          (edge) =>
+            edge.from &&
+            edge.to
+        ),
+    [graphData.edges]
+  );
+
+  const nodeMap = useMemo(() => {
+    const map = new Map();
+
+    graphNodes.forEach(
+      (node) => {
+        map.set(
+          String(node.id),
+          node
+        );
+      }
+    );
+
+    return map;
+  }, [graphNodes]);
+
+  const nodeTypes = useMemo(() => {
+    const types =
+      graphNodes
+        .map(
+          (node) =>
+            node.type
+        )
+        .filter(Boolean);
+
+    return [
+      "All",
+      ...Array.from(
+        new Set(types)
+      ),
+    ];
+  }, [graphNodes]);
+
+  const filteredNodes = useMemo(() => {
+    const query =
+      search
+        .toLowerCase()
+        .trim();
+
+    return graphNodes.filter(
+      (node) => {
+        const searchable = [
+          node.id,
+          node.label,
+          node.type,
+          node.kind,
+          node.metadata?.ip,
+          node.metadata?.hostname,
+          node.metadata?.asset_id,
+          node.metadata?.attack_type,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        const matchesSearch =
+          !query ||
+          searchable.includes(
+            query
+          );
+
+        const matchesFilter =
+          filter === "All" ||
+          node.type ===
+            filter;
+
+        return (
+          matchesSearch &&
+          matchesFilter
+        );
+      }
+    );
+  }, [
+    graphNodes,
+    search,
+    filter,
+  ]);
+
+  const visibleNodeIds =
+    useMemo(
+      () =>
+        new Set(
+          filteredNodes.map(
+            (node) =>
+              String(node.id)
+          )
+        ),
+      [filteredNodes]
+    );
+
+  const visibleEdges =
+    useMemo(
+      () =>
+        graphEdges.filter(
+          (edge) =>
+            visibleNodeIds.has(
+              String(edge.from)
+            ) &&
+            visibleNodeIds.has(
+              String(edge.to)
+            )
+        ),
+      [
+        graphEdges,
+        visibleNodeIds,
+      ]
+    );
+
+  const stats =
+    graphData.stats || {};
+
+  const totalNodes =
+    Number.isFinite(
+      Number(stats.nodes)
+    )
+      ? Number(stats.nodes)
+      : graphNodes.length;
+
+  const totalEdges =
+    Number.isFinite(
+      Number(stats.edges)
+    )
+      ? Number(stats.edges)
+      : graphEdges.length;
+
+  const threatNodes =
+    Number.isFinite(
+      Number(
+        stats.threat_nodes
+      )
+    )
+      ? Number(
+          stats.threat_nodes
+        )
+      : graphNodes.filter(
+          (node) =>
+            node.kind ===
+            "source"
+        ).length;
+
+  const affectedAssets =
+    Number.isFinite(
+      Number(
+        stats.affected_assets
+      )
+    )
+      ? Number(
+          stats.affected_assets
+        )
+      : graphNodes.filter(
+          (node) =>
+            node.kind ===
+            "asset"
+        ).length;
+
+  const responseActions =
+    Number.isFinite(
+      Number(
+        stats.response_actions
+      )
+    )
+      ? Number(
+          stats.response_actions
+        )
+      : graphNodes.filter(
+          (node) =>
+            node.kind ===
+            "response"
+        ).length;
+
+  /* Relationships touching the selected node, for the detail rail. */
+  const connections = useMemo(() => {
+    if (!selectedNode) return { inbound: [], outbound: [] };
+
+    const id = String(selectedNode.id);
+
+    return {
+      inbound: graphEdges
+        .filter((edge) => String(edge.to) === id)
+        .map((edge) => nodeMap.get(String(edge.from)))
+        .filter(Boolean),
+
+      outbound: graphEdges
+        .filter((edge) => String(edge.from) === id)
+        .map((edge) => nodeMap.get(String(edge.to)))
+        .filter(Boolean),
+    };
+  }, [selectedNode, graphEdges, nodeMap]);
 
   return (
-    <div className="min-h-screen bg-[#08111f] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px]">
-        <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-cyan-400"
-            >
-              <ArrowLeft size={16} />
-              Back to Dashboard
-            </button>
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Analysis"
+        title="Attack graph"
+        description="How the observed activity connects: where it came from, what it touched and what responded."
+        status={
+          <Badge tone="slate">
+            {totalNodes} nodes · {totalEdges} relationships
+          </Badge>
+        }
+        actions={
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            loading={loading}
+            onClick={loadAttackGraph}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        }
+      />
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-cyan-400/10 p-3 text-cyan-400">
-                <Network size={28} />
-              </div>
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
+        {error && <Notice tone="error">{error}</Notice>}
 
-              <div>
-                <h1 className="text-2xl font-bold sm:text-3xl">
-                  Attack Graph
-                </h1>
-
-                <p className="mt-1 text-sm text-slate-400">
-                  Visualize attack paths, compromised assets, and response actions.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={loadLatestScan}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
-            >
-              <RefreshCw size={16} />
-              Refresh
-            </button>
-
-            <button
-              onClick={() => setSelectedNode(null)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
-            >
-              <CircleDot size={16} />
-              Clear Selection
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Graph Nodes"
-            value={graphNodes.length}
-            icon={Network}
-          />
-
-          <StatCard
-            label="Threat Nodes"
+            label="Threat origins"
             value={threatNodes}
-            icon={ShieldAlert}
-            tone="red"
+            tone={threatNodes > 0 ? "critical" : "good"}
+            emphasis
+            hint="Entry points in the graph"
           />
 
           <StatCard
-            label="Affected Assets"
+            label="Affected assets"
             value={affectedAssets}
-            icon={Server}
-            tone="orange"
+            tone={affectedAssets > 0 ? "medium" : "good"}
+            hint="Reached by the attack path"
           />
 
           <StatCard
-            label="Response Actions"
-            value="1"
-            icon={CheckCircle2}
-            tone="green"
+            label="Response actions"
+            value={responseActions}
+            tone="good"
+            hint="Containment nodes"
+          />
+
+          <StatCard
+            label="Relationships"
+            value={totalEdges}
+            tone="brand"
+            hint="Directed edges between nodes"
           />
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="min-w-0 rounded-2xl border border-white/10 bg-[#0d1727] p-4 sm:p-5">
-            <div className="mb-5 flex flex-col gap-3 lg:flex-row">
-              <div className="relative flex-1">
-                <Search
-                  size={17}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                />
+        {/* ---------------------------------------------------- filter bar */}
 
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search graph nodes..."
-                  className="w-full rounded-xl border border-white/10 bg-[#111a2b] py-2.5 pl-10 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400/60"
-                />
-              </div>
+        <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+          <SearchInput
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search node, IP, hostname or attack type"
+            className="lg:max-w-sm lg:flex-1"
+          />
 
-              <select
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-                className="rounded-xl border border-white/10 bg-[#111a2b] px-3 py-2.5 text-sm text-slate-300 outline-none focus:border-cyan-400/60"
+          <Select
+            label="Node type"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            className="lg:w-56"
+          >
+            {nodeTypes.map((type) => (
+              <option key={type} value={type}>
+                {type === "All" ? "All node types" : type}
+              </option>
+            ))}
+          </Select>
+
+          <div className="flex flex-wrap items-center gap-4 lg:ml-auto">
+            {Object.entries(KIND_LABEL).map(([kind, label]) => (
+              <span
+                key={kind}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-500"
               >
-                <option value="All">All Node Types</option>
-                <option value="Threat Actor">Threat Actor</option>
-                <option value="Malicious IP">Malicious IP</option>
-                <option value="Compromised Endpoint">
-                  Compromised Endpoint
-                </option>
-                <option value="Execution">Execution</option>
-                <option value="Malware">Malware</option>
-                <option value="User Account">User Account</option>
-                <option value="Sensitive Asset">Sensitive Asset</option>
-                <option value="Endpoint Isolation">
-                  Endpoint Isolation
-                </option>
-              </select>
-            </div>
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: NODE_COLORS[kind] }}
+                />
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
 
-            <div className="overflow-x-auto rounded-xl border border-white/10 bg-[#08111f]">
-              <div
-                className="relative"
-                style={{
-                  width: 1080,
-                  height: 570,
-                  backgroundImage:
-                    "radial-gradient(circle, rgba(148,163,184,0.18) 1px, transparent 1px)",
-                  backgroundSize: "24px 24px",
-                }}
-              >
-                <svg
-                  width="1080"
-                  height="570"
-                  className="absolute inset-0"
-                  aria-label="Attack path connections"
-                >
-                  <defs>
-                    <marker
-                      id="attack-arrow"
-                      markerWidth="8"
-                      markerHeight="8"
-                      refX="6"
-                      refY="3"
-                      orient="auto"
-                    >
-                      <path
-                        d="M0,0 L0,6 L6,3 z"
-                        fill="#64748b"
-                      />
-                    </marker>
-                  </defs>
+        {/* ------------------------------------------- canvas + detail rail */}
 
-                  {graphEdges.map(([fromId, toId]) => {
-                    const from = graphNodes.find(
-                      (node) => node.id === fromId
-                    );
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <Panel
+            title="Attack path"
+            hint={`${filteredNodes.length} of ${graphNodes.length} nodes shown`}
+          >
+            {loading ? (
+              <LoadingState label="Building the attack graph" rows={3} />
+            ) : filteredNodes.length === 0 ? (
+              <EmptyState
+                icon={Crosshair}
+                title={
+                  graphNodes.length === 0
+                    ? "No attack graph returned"
+                    : "No nodes match these filters"
+                }
+                description={
+                  graphNodes.length === 0
+                    ? "The graph endpoint returned no nodes. It populates once correlated attack activity is recorded."
+                    : "Clear the search or switch back to all node types."
+                }
+              />
+            ) : (
+              <GraphCanvas
+                nodes={filteredNodes}
+                edges={visibleEdges}
+                nodeMap={nodeMap}
+                selectedId={selectedNode?.id}
+                onSelect={setSelectedNode}
+              />
+            )}
+          </Panel>
 
-                    const to = graphNodes.find(
-                      (node) => node.id === toId
-                    );
-
-                    if (
-                      !from ||
-                      !to ||
-                      !visibleNodeIds.has(fromId) ||
-                      !visibleNodeIds.has(toId)
-                    ) {
-                      return null;
-                    }
-
-                    const isSelected =
-                      selectedNode &&
-                      (selectedNode.id === fromId ||
-                        selectedNode.id === toId);
-
-                    return (
-                      <line
-                        key={`${fromId}-${toId}`}
-                        x1={from.x}
-                        y1={from.y}
-                        x2={to.x}
-                        y2={to.y}
-                        stroke={isSelected ? "#22d3ee" : "#475569"}
-                        strokeWidth={isSelected ? "3" : "2"}
-                        strokeDasharray={isSelected ? "0" : "6 5"}
-                        markerEnd="url(#attack-arrow)"
-                      />
-                    );
-                  })}
-                </svg>
-
-                {filteredNodes.map((node) => (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    selected={selectedNode?.id === node.id}
-                    onClick={setSelectedNode}
-                  />
-                ))}
-
-                <div className="absolute bottom-4 left-4 rounded-xl border border-white/10 bg-[#111a2b]/95 px-3 py-2 text-xs text-slate-400">
-                  {loading
-                    ? "Loading latest scan..."
-                    : alerts.length > 0
-                      ? "Connected to latest scanner result"
-                      : "Showing fallback attack graph"}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                Threat
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-                Network
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
-                Execution
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                Response
-              </div>
-            </div>
-          </section>
-
-          <aside className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-              <div className="mb-5 flex items-center gap-2">
-                <ShieldAlert size={18} className="text-cyan-400" />
-
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Node Details
-                </h2>
-              </div>
-
-              {selectedNode ? (
-                <div>
-                  <div className="mb-4 flex items-start gap-3">
-                    <div
-                      className="rounded-xl p-3"
+          <div className="space-y-4">
+            <Panel title="Node details">
+              {!selectedNode ? (
+                <EmptyState
+                  title="Select a node"
+                  description="Click any node in the graph to see its metadata and the relationships that reach it."
+                />
+              ) : (
+                <div className="space-y-5">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
                       style={{
-                        backgroundColor: `${selectedNode.color}18`,
+                        backgroundColor: `${selectedNode.color}14`,
                         color: selectedNode.color,
                       }}
                     >
-                      {(() => {
-                        const Icon = selectedNode.icon;
-                        return <Icon size={24} />;
-                      })()}
-                    </div>
+                      <selectedNode.icon size={18} />
+                    </span>
 
-                    <div>
-                      <p className="text-xs text-slate-500">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium text-slate-900">
+                        {selectedNode.label}
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-slate-500">
                         {selectedNode.type}
                       </p>
+                    </div>
+                  </div>
 
-                      <h3 className="mt-1 text-lg font-bold text-white">
-                        {selectedNode.label}
+                  <Badge tone="slate">
+                    {KIND_LABEL[selectedNode.kind] || KIND_LABEL.default}
+                  </Badge>
+
+                  <div>
+                    <InfoRow label="Node ID" value={selectedNode.id} mono />
+
+                    {selectedNode.metadata?.ip && (
+                      <InfoRow
+                        label="IP address"
+                        value={selectedNode.metadata.ip}
+                        mono
+                      />
+                    )}
+
+                    {selectedNode.metadata?.hostname && (
+                      <InfoRow
+                        label="Hostname"
+                        value={selectedNode.metadata.hostname}
+                        mono
+                      />
+                    )}
+
+                    {selectedNode.metadata?.asset_id && (
+                      <InfoRow
+                        label="Asset ID"
+                        value={selectedNode.metadata.asset_id}
+                        mono
+                      />
+                    )}
+
+                    {selectedNode.metadata?.attack_type && (
+                      <InfoRow
+                        label="Attack type"
+                        value={selectedNode.metadata.attack_type}
+                      />
+                    )}
+                  </div>
+
+                  {(connections.inbound.length > 0 ||
+                    connections.outbound.length > 0) && (
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                        Connections
                       </h3>
+
+                      <ul className="space-y-1.5">
+                        {connections.inbound.map((node) => (
+                          <li
+                            key={`in-${node.id}`}
+                            className="flex items-center gap-2 text-sm text-slate-600"
+                          >
+                            <span className="text-slate-400">←</span>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedNode(node)}
+                              className="truncate text-left hover:text-indigo-700 hover:underline"
+                            >
+                              {node.label}
+                            </button>
+                          </li>
+                        ))}
+
+                        {connections.outbound.map((node) => (
+                          <li
+                            key={`out-${node.id}`}
+                            className="flex items-center gap-2 text-sm text-slate-600"
+                          >
+                            <span className="text-slate-400">→</span>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedNode(node)}
+                              className="truncate text-left hover:text-indigo-700 hover:underline"
+                            >
+                              {node.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">
-                        Node ID
-                      </p>
-
-                      <p className="mt-1 font-mono text-sm text-cyan-300">
-                        {selectedNode.id}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">
-                        Risk Status
-                      </p>
-
-                      <p className="mt-1 text-sm font-semibold text-orange-300">
-                        Requires Review
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3">
-                      <p className="text-xs text-slate-500">
-                        Recommended Action
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-slate-300">
-                        Investigate related events and verify whether
-                        the activity is authorized.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-white/10 bg-[#0d1727] p-6 text-center">
-                  <Network
-                    className="mx-auto text-slate-600"
-                    size={32}
-                  />
-
-                  <p className="mt-3 text-sm text-slate-400">
-                    Select a node from the graph to view its details.
-                  </p>
+                  <Button
+                    variant="secondary"
+                    onClick={() => navigate("/investigation")}
+                    className="w-full"
+                  >
+                    Open investigation workspace
+                  </Button>
                 </div>
               )}
-            </section>
+            </Panel>
 
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <AlertTriangle
-                  size={18}
-                  className="text-orange-400"
-                />
+            <Card className="p-5">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Reading this graph
+              </h3>
 
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Attack Path Summary
-                </h2>
-              </div>
-
-              <div className="space-y-3">
-                {[
-                  "External attacker identified",
-                  "Malicious source contacted endpoint",
-                  "Threat execution detected",
-                  "Potential payload activity detected",
-                  "Endpoint isolation recommended",
-                ].map((item, index) => (
-                  <div
-                    key={item}
-                    className="flex items-start gap-3"
-                  >
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-xs font-bold text-cyan-300">
-                      {index + 1}
-                    </div>
-
-                    <p className="text-sm leading-6 text-slate-400">
-                      {item}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={() => navigate("/investigation")}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-[#06111e] transition hover:bg-cyan-300"
-              >
-                Open Investigation
-                <ChevronRight size={16} />
-              </button>
-            </section>
-          </aside>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Edges point in the direction the activity travelled. A node's
+                left edge is coloured by its role, so a red spine marks where an
+                attack entered and a green one marks where it was contained.
+              </p>
+            </Card>
+          </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

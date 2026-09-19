@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { AlertTriangle, CheckCircle2, FileText, Play, ScrollText } from "lucide-react";
+
 import {
   runSecurityAudit,
   getAuditTriggers,
@@ -8,8 +10,31 @@ import {
   getAuditById,
 } from "../services/dashboardApi";
 
+import {
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PageHeader,
+  Panel,
+  ScoreRing,
+  Select,
+  StatCard,
+  StatusBadge,
+  Table,
+  Cell,
+} from "../components/ui";
+
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+/* =========================================================
+   HELPERS  (unchanged)
+========================================================= */
 
 function formatDate(dateValue) {
   if (!dateValue) return "—";
@@ -35,59 +60,49 @@ function getHistoryArray(response) {
   return response?.audits || response?.data || [];
 }
 
-function StatCard({ label, value, color = "text-white" }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
-        {label}
-      </p>
-
-      <p className={`mt-3 text-3xl font-semibold ${color}`}>
-        {value ?? "—"}
-      </p>
-    </div>
-  );
-}
-
-function SectionCard({ title, children, action }) {
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-200">
-          {title}
-        </h2>
-
-        {action}
-      </div>
-
-      {children}
-    </section>
-  );
-}
-
+/* Module score bar. Colour follows the same thresholds as the score ring so
+   a weak module reads the same way everywhere. */
 function ScoreBar({ label, score }) {
-  const numericScore = Number(score || 0);
+  const value = Number(score) || 0;
+
+  const tone =
+    value >= 75
+      ? "bg-emerald-600"
+      : value >= 50
+        ? "bg-amber-500"
+        : value >= 25
+          ? "bg-orange-500"
+          : "bg-red-600";
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-slate-300">{label}</span>
+    <li>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm text-slate-700">
+          {String(label).replaceAll("_", " ")}
+        </span>
 
-        <span className="font-semibold text-white">
-          {Number.isFinite(numericScore) ? numericScore : 0}/100
+        <span className="text-sm font-semibold tabular-nums text-slate-900">
+          {value}
         </span>
       </div>
 
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
         <div
-          className="h-full rounded-full bg-cyan-400 transition-all"
+          className={`h-full rounded-full ${tone}`}
           style={{
-            width: `${Math.min(100, Math.max(0, numericScore))}%`,
+            width: `${Math.max(0, Math.min(value, 100))}%`,
+            transition: "width .5s cubic-bezier(.22,1,.36,1)",
           }}
         />
       </div>
-    </div>
+    </li>
   );
+}
+
+function toText(value, fallback) {
+  if (typeof value === "string") return value;
+
+  return value?.title || value?.description || fallback || JSON.stringify(value);
 }
 
 export default function Audit() {
@@ -282,69 +297,86 @@ export default function Audit() {
     "Not available";
 
   return (
-    <main className="min-h-screen bg-[#070b14] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col justify-between gap-5 border-b border-white/10 pb-6 md:flex-row md:items-end">
-          <div>
-            <button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className="mb-4 text-sm text-cyan-300 transition hover:text-cyan-200"
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Governance"
+        title="Security audit"
+        description="Run a posture assessment, review its findings and export the signed report."
+        status={
+          audit ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="indigo">Grade {securityGrade}</Badge>
+
+              <Badge tone="slate">{posture}</Badge>
+            </div>
+          ) : (
+            <Badge tone="slate">No audit selected</Badge>
+          )
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon={FileText}
+              onClick={openPdfReport}
+              disabled={!audit}
             >
-              ← Back to Dashboard
-            </button>
+              Open PDF report
+            </Button>
 
-            <p className="text-xs uppercase tracking-[0.25em] text-cyan-400">
-              SAOM-AI / Compliance & Security
-            </p>
+            <Button
+              variant="primary"
+              icon={Play}
+              loading={running}
+              onClick={runAudit}
+              disabled={running}
+            >
+              {running ? "Running audit" : "Run audit"}
+            </Button>
+          </>
+        }
+      />
 
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Security Audit Center
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm text-slate-400">
-              Run security audits, review findings, inspect security posture,
-              and generate audit reports.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={runAudit}
-            disabled={running}
-            className="rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {running ? "Running Audit..." : "Run Security Audit"}
-          </button>
-        </header>
-
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
         {error && (
-          <div className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          <Notice tone="error" onDismiss={() => setError("")}>
             {error}
-          </div>
+          </Notice>
         )}
 
         {successMessage && (
-          <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          <Notice tone="success" onDismiss={() => setSuccessMessage("")}>
             {successMessage}
-          </div>
+          </Notice>
         )}
 
-        <SectionCard title="Audit Configuration">
-          <div className="grid gap-4 md:grid-cols-3">
+        {running && (
+          <Card className="overflow-hidden p-0">
+            <div className="h-0.5 w-full overflow-hidden bg-slate-100">
+              <div className="h-full w-full animate-pulse bg-indigo-500" />
+            </div>
+
+            <p className="px-5 py-4 text-sm text-slate-600">
+              Running the audit modules. This page updates when the backend
+              returns the completed report.
+            </p>
+          </Card>
+        )}
+
+        {/* ----------------------------------------------- audit controls */}
+
+        <Panel title="Run a new audit">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] md:items-end">
             <label className="block">
-              <span className="mb-2 block text-sm text-slate-400">
-                Trigger Type
+              <span className="mb-1.5 block text-xs text-slate-500">
+                Trigger
               </span>
 
-              <select
+              <Select
                 value={selectedTrigger}
-                onChange={(event) =>
-                  setSelectedTrigger(event.target.value)
-                }
-                className="w-full rounded-xl border border-white/10 bg-[#0d1422] px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
+                onChange={(event) => setSelectedTrigger(event.target.value)}
               >
-                <option value="MANUAL">Manual</option>
+                <option value="MANUAL">MANUAL</option>
 
                 {triggers.map((trigger, index) => {
                   const value =
@@ -362,348 +394,306 @@ export default function Audit() {
                     </option>
                   );
                 })}
-              </select>
+              </Select>
             </label>
 
-            <label className="block md:col-span-2">
-              <span className="mb-2 block text-sm text-slate-400">
-                Generated By
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-slate-500">
+                Generated by
               </span>
 
               <input
                 value={generatedBy}
-                onChange={(event) =>
-                  setGeneratedBy(event.target.value)
-                }
-                className="w-full rounded-xl border border-white/10 bg-[#0d1422] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400"
-                placeholder="Enter audit owner"
+                onChange={(event) => setGeneratedBy(event.target.value)}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
               />
             </label>
-          </div>
-        </SectionCard>
 
-        {loading ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-slate-400">
-            Loading audit data...
+            <Button
+              variant="primary"
+              icon={Play}
+              loading={running}
+              onClick={runAudit}
+              disabled={running}
+              className="md:mb-0"
+            >
+              {running ? "Running" : "Run audit"}
+            </Button>
           </div>
-        ) : audit ? (
+        </Panel>
+
+        {loading && !audit ? (
+          <Panel>
+            <LoadingState label="Loading audit history" rows={4} />
+          </Panel>
+        ) : !audit ? (
+          <Panel>
+            <EmptyState
+              icon={ScrollText}
+              title="No audit has been generated yet"
+              description="Run an audit to score the environment, list findings and produce an exportable report."
+              action={
+                <Button variant="primary" icon={Play} onClick={runAudit}>
+                  Run the first audit
+                </Button>
+              }
+            />
+          </Panel>
+        ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* ------------------------------------------ score + summary */}
+
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <Card className="p-6">
+                <ScoreRing
+                  value={Number(overallScore) || 0}
+                  max={100}
+                  size={140}
+                  label={`Overall score · grade ${securityGrade}`}
+                  caption={posture}
+                />
+
+                <div className="mt-6 border-t border-slate-100 pt-4">
+                  <InfoRow
+                    label="Audit"
+                    value={audit?.audit_name || "Security audit"}
+                  />
+
+                  <InfoRow
+                    label="Trigger"
+                    value={audit?.trigger_type || selectedTrigger}
+                  />
+
+                  <InfoRow
+                    label="Generated by"
+                    value={audit?.generated_by || generatedBy}
+                  />
+
+                  <InfoRow
+                    label="Completed"
+                    value={formatDate(
+                      audit?.completed_at || audit?.created_at
+                    )}
+                  />
+                </div>
+              </Card>
+
+              <Panel title="Module scores">
+                {moduleScores.length === 0 ? (
+                  <EmptyState
+                    title="No module breakdown returned"
+                    description="This audit reported an overall score without per-module detail."
+                  />
+                ) : (
+                  <ul className="space-y-4">
+                    {moduleScores.map((module, index) => (
+                      <ScoreBar
+                        key={module.name || index}
+                        label={module.name || `Module ${index + 1}`}
+                        score={module.score}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+            </div>
+
+            {/* --------------------------------------------------- counts */}
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
-                label="Overall Score"
-                value={`${overallScore}/100`}
-                color="text-cyan-300"
+                label="Critical findings"
+                value={criticalFindings.length}
+                tone={criticalFindings.length > 0 ? "critical" : "good"}
+                emphasis
+                hint="Must be remediated"
               />
 
               <StatCard
-                label="Security Grade"
-                value={securityGrade}
-                color="text-emerald-300"
+                label="Warnings"
+                value={warnings.length}
+                tone={warnings.length > 0 ? "medium" : "good"}
+                hint="Review when convenient"
               />
 
               <StatCard
-                label="Assets at Risk"
-                value={audit.assets_at_risk}
-                color="text-amber-300"
+                label="Checks passed"
+                value={passedChecks.length}
+                tone="good"
+                hint={`${checks.length} checks executed`}
               />
 
               <StatCard
-                label="Open Alerts"
-                value={audit.open_alerts}
-                color="text-red-300"
+                label="Assets at risk"
+                value={audit?.assets_at_risk ?? "—"}
+                tone="brand"
+                hint={`${audit?.total_assets ?? "—"} assets assessed`}
               />
             </div>
 
-            <SectionCard
-              title="Audit Summary"
-              action={
-                <button
-                  type="button"
-                  onClick={openPdfReport}
-                  className="rounded-lg border border-cyan-400/30 px-3 py-2 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-400/10"
-                >
-                  Open PDF Report
-                </button>
-              }
-            >
-              <div className="grid gap-5 lg:grid-cols-2">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-wider text-slate-500">
-                      Audit Name
-                    </p>
+            {audit?.ai_summary && (
+              <Card className="p-6">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Audit summary
+                </h2>
 
-                    <p className="mt-1 text-lg font-semibold text-white">
-                      {audit.audit_name || "Security Audit"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs uppercase tracking-wider text-slate-500">
-                      Security Posture
-                    </p>
-
-                    <p className="mt-1 text-base font-medium text-cyan-300">
-                      {posture}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white/[0.04] p-3">
-                      <p className="text-xs text-slate-500">
-                        Total Assets
-                      </p>
-
-                      <p className="mt-1 text-xl font-semibold">
-                        {audit.total_assets ?? "—"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-white/[0.04] p-3">
-                      <p className="text-xs text-slate-500">
-                        Resolved Alerts
-                      </p>
-
-                      <p className="mt-1 text-xl font-semibold">
-                        {audit.resolved_alerts ?? "—"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-white/10 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-wider text-slate-500">
-                    AI Summary
-                  </p>
-
-                  <p className="mt-3 text-sm leading-7 text-slate-300">
-                    {audit.ai_summary ||
-                      "No AI summary is available for this audit."}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 border-t border-white/10 pt-5 text-xs text-slate-500 sm:grid-cols-2">
-                <p>
-                  Created:{" "}
-                  <span className="text-slate-300">
-                    {formatDate(audit.created_at)}
-                  </span>
+                <p className="mt-3 max-w-[78ch] text-[15px] leading-7 text-slate-700">
+                  {audit.ai_summary}
                 </p>
-
-                <p>
-                  Completed:{" "}
-                  <span className="text-slate-300">
-                    {formatDate(audit.completed_at)}
-                  </span>
-                </p>
-
-                <p>
-                  Trigger:{" "}
-                  <span className="text-slate-300">
-                    {audit.trigger_type || "—"}
-                  </span>
-                </p>
-
-                <p>
-                  Generated By:{" "}
-                  <span className="text-slate-300">
-                    {audit.generated_by || "—"}
-                  </span>
-                </p>
-              </div>
-            </SectionCard>
-
-            {moduleScores.length > 0 && (
-              <SectionCard title="Module Scores">
-                <div className="grid gap-5 md:grid-cols-2">
-                  {moduleScores.map((module, index) => (
-                    <ScoreBar
-                      key={`${module.name || module.module || index}`}
-                      label={
-                        module.name ||
-                        module.module ||
-                        module.module_name ||
-                        `Module ${index + 1}`
-                      }
-                      score={
-                        module.score ??
-                        module.overall_score ??
-                        module.value ??
-                        0
-                      }
-                    />
-                  ))}
-                </div>
-              </SectionCard>
+              </Card>
             )}
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <SectionCard title="Critical Findings">
-                {criticalFindings.length === 0 ? (
-                  <p className="text-sm text-emerald-300">
-                    No critical findings reported.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {criticalFindings.map((finding, index) => (
-                      <div
-                        key={index}
-                        className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-100"
-                      >
-                        {typeof finding === "string"
-                          ? finding
-                          : finding?.title ||
-                            finding?.description ||
-                            JSON.stringify(finding)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </SectionCard>
+            {/* ------------------------------------------------- findings */}
 
-              <SectionCard title="Warnings">
-                {warnings.length === 0 ? (
-                  <p className="text-sm text-emerald-300">
-                    No warnings reported.
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Panel title="Critical findings">
+                {criticalFindings.length === 0 ? (
+                  <p className="text-sm text-emerald-700">
+                    No critical findings were reported.
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    {warnings.map((warning, index) => (
-                      <div
+                  <ul className="space-y-2.5">
+                    {criticalFindings.map((finding, index) => (
+                      <li
                         key={index}
-                        className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100"
+                        className="flex gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800"
                       >
-                        {typeof warning === "string"
-                          ? warning
-                          : warning?.title ||
-                            warning?.description ||
-                            JSON.stringify(warning)}
-                      </div>
+                        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+
+                        {toText(finding, "Critical finding")}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
-              </SectionCard>
+              </Panel>
+
+              <Panel title="Warnings">
+                {warnings.length === 0 ? (
+                  <p className="text-sm text-emerald-700">
+                    No warnings were reported.
+                  </p>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {warnings.map((warning, index) => (
+                      <li
+                        key={index}
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800"
+                      >
+                        {toText(warning, "Warning")}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
             </div>
 
-            <SectionCard title="Recommendations">
+            <Panel title="Recommendations" hint="In the order the audit ranked them">
               {recommendations.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No recommendations available.
+                <p className="text-sm text-slate-500">
+                  This audit returned no recommendations.
                 </p>
               ) : (
-                <ol className="space-y-3">
+                <ol className="space-y-2.5">
                   {recommendations.map((recommendation, index) => (
                     <li
                       key={index}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300"
+                      className="flex gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
                     >
-                      <span className="mr-3 font-semibold text-cyan-300">
-                        {String(index + 1).padStart(2, "0")}
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold tabular-nums text-slate-500 ring-1 ring-slate-200">
+                        {index + 1}
                       </span>
 
-                      {typeof recommendation === "string"
-                        ? recommendation
-                        : recommendation?.title ||
-                          recommendation?.description ||
-                          JSON.stringify(recommendation)}
+                      {toText(recommendation, "Recommendation")}
                     </li>
                   ))}
                 </ol>
               )}
-            </SectionCard>
+            </Panel>
 
-            <SectionCard title="Audit Checks">
+            {/* --------------------------------------------------- checks */}
+
+            <Panel title="Audit checks" className="overflow-hidden">
               {checks.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  No individual checks available.
+                <p className="text-sm text-slate-500">
+                  This audit returned no individual checks.
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[620px] text-left text-sm">
-                    <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-slate-500">
-                      <tr>
-                        <th className="px-3 py-3">Check</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Severity</th>
-                        <th className="px-3 py-3">Details</th>
+                <div className="-m-5">
+                  <Table
+                    columns={[
+                      { key: "check", label: "Check" },
+                      { key: "status", label: "Status" },
+                      { key: "severity", label: "Severity" },
+                      { key: "details", label: "Details" },
+                    ]}
+                  >
+                    {checks.map((check, index) => (
+                      <tr
+                        key={index}
+                        className="border-b border-slate-100 last:border-0"
+                      >
+                        <Cell className="font-medium text-slate-900">
+                          {check?.name ||
+                            check?.check_name ||
+                            `Check ${index + 1}`}
+                        </Cell>
+
+                        <Cell>
+                          <StatusBadge status={check?.status || "unknown"}>
+                            {check?.status || "—"}
+                          </StatusBadge>
+                        </Cell>
+
+                        <Cell className="text-slate-600">
+                          {check?.severity || "—"}
+                        </Cell>
+
+                        <Cell className="max-w-[420px] text-slate-600">
+                          {check?.details ||
+                            check?.description ||
+                            check?.message ||
+                            "—"}
+                        </Cell>
                       </tr>
-                    </thead>
-
-                    <tbody>
-                      {checks.map((check, index) => (
-                        <tr
-                          key={index}
-                          className="border-b border-white/5 last:border-0"
-                        >
-                          <td className="px-3 py-4 text-slate-200">
-                            {check?.name ||
-                              check?.check_name ||
-                              `Check ${index + 1}`}
-                          </td>
-
-                          <td className="px-3 py-4">
-                            <span className="rounded-full bg-white/10 px-2 py-1 text-xs text-slate-300">
-                              {check?.status || "—"}
-                            </span>
-                          </td>
-
-                          <td className="px-3 py-4 text-slate-300">
-                            {check?.severity || "—"}
-                          </td>
-
-                          <td className="px-3 py-4 text-slate-400">
-                            {check?.details ||
-                              check?.description ||
-                              "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                    ))}
+                  </Table>
                 </div>
               )}
-            </SectionCard>
+            </Panel>
 
             {passedChecks.length > 0 && (
-              <SectionCard title="Passed Checks">
-                <div className="space-y-2">
+              <Panel title="Passed checks">
+                <ul className="flex flex-wrap gap-2">
                   {passedChecks.map((check, index) => (
-                    <div
+                    <li
                       key={index}
-                      className="rounded-lg bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200"
+                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800"
                     >
-                      ✓{" "}
-                      {typeof check === "string"
-                        ? check
-                        : check?.name ||
-                          check?.description ||
-                          JSON.stringify(check)}
-                    </div>
+                      <CheckCircle2 size={14} />
+
+                      {toText(check, "Passed check")}
+                    </li>
                   ))}
-                </div>
-              </SectionCard>
+                </ul>
+              </Panel>
             )}
           </>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-10 text-center">
-            <h2 className="text-xl font-semibold text-white">
-              No audit available
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-400">
-              Run your first security audit to generate a report.
-            </p>
-          </div>
         )}
 
-        <SectionCard title="Audit History">
+        {/* -------------------------------------------------- audit history */}
+
+        <Panel
+          title="Audit history"
+          hint={`${history.length} previous audits`}
+          className="overflow-hidden"
+        >
           {history.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No previous audits found.
-            </p>
+            <EmptyState
+              title="No previous audits"
+              description="Completed audits are listed here so you can compare posture over time."
+            />
           ) : (
-            <div className="space-y-3">
+            <ul className="-mx-5 -mb-5 divide-y divide-slate-100">
               {history.map((historyItem, index) => {
                 const historyId =
                   historyItem?.audit_id ||
@@ -711,47 +701,50 @@ export default function Audit() {
                   historyItem?.id ||
                   index;
 
+                const isCurrent =
+                  audit &&
+                  (audit.audit_id || audit._id || audit.id) === historyId;
+
                 return (
-                  <button
-                    key={historyId}
-                    type="button"
-                    onClick={() => selectAudit(historyItem)}
-                    className="flex w-full flex-col justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.04] sm:flex-row sm:items-center"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-200">
-                        {historyItem?.audit_name ||
-                          historyItem?.name ||
-                          "Security Audit"}
-                      </p>
+                  <li key={historyId}>
+                    <button
+                      type="button"
+                      onClick={() => selectAudit(historyItem)}
+                      className={`flex w-full flex-wrap items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors duration-150 ${
+                        isCurrent ? "bg-indigo-50/60" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-slate-900">
+                          {historyItem?.audit_name ||
+                            historyItem?.name ||
+                            "Security audit"}
+                        </span>
 
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatDate(
-                          historyItem?.created_at ||
-                            historyItem?.createdAt
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <span className="text-sm text-cyan-300">
-                        Score:{" "}
-                        {historyItem?.overall_score ??
-                          historyItem?.score ??
-                          "—"}
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          {formatDate(
+                            historyItem?.created_at || historyItem?.createdAt
+                          )}
+                        </span>
                       </span>
 
-                      <span className="text-xs text-slate-500">
-                        View →
+                      <span className="flex items-center gap-4">
+                        <span className="text-sm font-semibold tabular-nums text-slate-900">
+                          {historyItem?.overall_score ??
+                            historyItem?.score ??
+                            "—"}
+                        </span>
+
+                        {isCurrent && <Badge tone="indigo">Viewing</Badge>}
                       </span>
-                    </div>
-                  </button>
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
-        </SectionCard>
+        </Panel>
       </div>
-    </main>
+    </AppShell>
   );
 }

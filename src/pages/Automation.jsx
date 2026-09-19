@@ -1,28 +1,16 @@
-
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
-  ArrowLeft,
-  Workflow,
-  Play,
-  Pause,
-  Plus,
-  Search,
-  CheckCircle2,
-  AlertTriangle,
-  Zap,
-  ShieldCheck,
-  Mail,
   Ban,
-  UserCheck,
-  RefreshCw,
-  ChevronRight,
-  Activity,
-  X,
   Check,
-  XCircle,
-  Loader2,
-  ShieldAlert,
+  Mail,
+  Play,
+  RefreshCw,
+  ShieldCheck,
+  UserCheck,
+  Workflow,
+  X,
 } from "lucide-react";
 
 import {
@@ -33,8 +21,26 @@ import {
   executeSOARAction,
 } from "../services/dashboardApi";
 
+import {
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PageHeader,
+  Panel,
+  SearchInput,
+  SegmentedControl,
+  SidePanel,
+  StatCard,
+  StatusBadge,
+} from "../components/ui";
+
 /* =========================================================
-   HELPERS
+   HELPERS  (unchanged — response unwrapping + normalisation)
 ========================================================= */
 
 function unwrapResponse(response) {
@@ -256,77 +262,14 @@ function normalizeWorkflow(item, index) {
   };
 }
 
-/* =========================================================
-   STYLES / SMALL COMPONENTS
-========================================================= */
-
-const categoryStyles = {
-  "Endpoint Response":
-    "text-cyan-300 bg-cyan-400/10 border-cyan-400/20",
-  "Network Security":
-    "text-purple-300 bg-purple-400/10 border-purple-400/20",
-  Notifications:
-    "text-orange-300 bg-orange-400/10 border-orange-400/20",
-  "Identity Security":
-    "text-emerald-300 bg-emerald-400/10 border-emerald-400/20",
+/* Category colour is informational: it tells an analyst which control plane
+   an action touches before they read the name. */
+const CATEGORY_TONE = {
+  "Endpoint Response": "indigo",
+  "Network Security": "violet",
+  Notifications: "amber",
+  "Identity Security": "emerald",
 };
-
-function Badge({ children, className = "" }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function StatCard({ label, value, icon: Icon, tone = "cyan" }) {
-  const tones = {
-    cyan: "bg-cyan-400/10 text-cyan-400",
-    green: "bg-emerald-400/10 text-emerald-400",
-    orange: "bg-orange-400/10 text-orange-400",
-    purple: "bg-purple-400/10 text-purple-400",
-  };
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">{label}</span>
-
-        <div className={`rounded-xl p-2 ${tones[tone]}`}>
-          <Icon size={17} />
-        </div>
-      </div>
-
-      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
-    </div>
-  );
-}
-
-function ActionButton({
-  children,
-  onClick,
-  disabled = false,
-  loading = false,
-  className = "",
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    >
-      {loading && <Loader2 size={15} className="animate-spin" />}
-      {children}
-    </button>
-  );
-}
-
-/* =========================================================
-   PAGE
-========================================================= */
 
 export default function Automation() {
   const navigate = useNavigate();
@@ -510,545 +453,324 @@ export default function Automation() {
     }
   };
 
+  const pendingCount = workflows.filter(
+    (workflow) => workflow.status === "Pending"
+  ).length;
+
+  const executedCount = workflows.filter(
+    (workflow) => workflow.status === "Executed"
+  ).length;
+
   return (
-    <div className="min-h-screen bg-[#08111f] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px]">
-        {/* Header */}
-        <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-cyan-400"
-            >
-              <ArrowLeft size={16} />
-              Back to Dashboard
-            </button>
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Response"
+        title="Automation"
+        description="Playbook actions produced by the SOAR engine, their approval state and execution outcome."
+        status={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={healthError ? "slate" : "emerald"}>
+              {healthError ? "Health unavailable" : "SOAR engine online"}
+            </Badge>
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-cyan-400/10 p-3 text-cyan-400">
-                <Workflow size={28} />
-              </div>
-
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  SOAR Automation
-                </h1>
-
-                <p className="mt-1 text-sm text-slate-400">
-                  Automate security response workflows and reduce manual effort.
-                </p>
-              </div>
-            </div>
+            {isSimulation && <Badge tone="amber">Simulation mode</Badge>}
           </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              setActionError(
-                "Custom workflow creation is not available in the current backend yet."
-              )
-            }
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-bold text-[#06111e] transition hover:bg-cyan-300"
-          >
-            <Plus size={17} />
-            Create Workflow
-          </button>
-        </div>
-
-        {/* Backend status */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <Badge
-            className={
-              healthError
-                ? "border-orange-400/20 bg-orange-400/10 text-orange-300"
-                : isSimulation
-                ? "border-yellow-400/20 bg-yellow-400/10 text-yellow-300"
-                : "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-            }
-          >
-            <span className="mr-2 h-1.5 w-1.5 rounded-full bg-current" />
-            {healthError
-              ? "SOAR STATUS UNKNOWN"
-              : isSimulation
-              ? "SOAR ENGINE · SIMULATION"
-              : "SOAR ENGINE ONLINE"}
-          </Badge>
-
-          {health?.mode && (
-            <span className="text-xs text-slate-500">
-              Mode: {toText(health.mode)}
-            </span>
-          )}
-        </div>
-
-        {/* Messages */}
-        {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-            <div className="flex-1">{error}</div>
-
-            <button
-              type="button"
-              onClick={() => setError("")}
-              className="text-red-300 hover:text-white"
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              loading={refreshing}
+              onClick={() => loadSOARData(true)}
+              disabled={refreshing || loading}
             >
-              <X size={16} />
-            </button>
-          </div>
-        )}
+              Refresh
+            </Button>
+
+            <Button variant="primary" onClick={() => navigate("/approvals")}>
+              Approval queue
+            </Button>
+          </>
+        }
+      />
+
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
+        {error && <Notice tone="error">{error}</Notice>}
+
+        {healthError && <Notice tone="warning">{healthError}</Notice>}
 
         {actionMessage && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-200">
-            <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-            <div className="flex-1">{actionMessage}</div>
-
-            <button
-              type="button"
-              onClick={() => setActionMessage("")}
-              className="text-emerald-300 hover:text-white"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          <Notice tone="success" onDismiss={() => setActionMessage("")}>
+            {actionMessage}
+          </Notice>
         )}
 
         {actionError && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-orange-400/20 bg-orange-400/10 p-4 text-sm text-orange-200">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-            <div className="flex-1">{actionError}</div>
-
-            <button
-              type="button"
-              onClick={() => setActionError("")}
-              className="text-orange-300 hover:text-white"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          <Notice tone="error" onDismiss={() => setActionError("")}>
+            {actionError}
+          </Notice>
         )}
 
-        {/* Stats */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Total Actions"
-            value={loading ? "—" : workflows.length}
-            icon={Workflow}
+            label="Waiting on approval"
+            value={pendingCount}
+            tone={pendingCount > 0 ? "medium" : "good"}
+            emphasis
+            hint="Blocked until an analyst decides"
+            onClick={() => navigate("/approvals")}
           />
 
           <StatCard
-            label="Active Actions"
-            value={loading ? "—" : activeCount}
-            icon={Zap}
-            tone="green"
+            label="Active playbooks"
+            value={activeCount}
+            tone="brand"
+            hint={`${executedCount} already executed`}
           />
 
           <StatCard
-            label="Total Executions"
-            value={loading ? "—" : totalRuns}
-            icon={Activity}
-            tone="purple"
+            label="Total executions"
+            value={totalRuns}
+            hint="Across every playbook"
           />
 
           <StatCard
-            label="Average Success Rate"
-            value={loading ? "—" : `${averageSuccessRate}${averageSuccessRate !== "—" ? "%" : ""}`}
-            icon={CheckCircle2}
-            tone="orange"
+            label="Average success rate"
+            value={
+              averageSuccessRate === "—"
+                ? "—"
+                : `${averageSuccessRate}%`
+            }
+            tone="good"
+            hint="Reported by the SOAR engine"
           />
         </div>
 
-        {/* Filters */}
-        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#0d1727] p-4 lg:flex-row">
-          <div className="relative flex-1">
-            <Search
-              size={17}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-            />
+        {/* ---------------------------------------------------- filter bar */}
 
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search workflows or SOAR actions..."
-              className="w-full rounded-xl border border-white/10 bg-[#111a2b] py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/60"
-            />
-          </div>
+        <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+          <SearchInput
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search playbook, trigger or status"
+            className="lg:max-w-sm lg:flex-1"
+          />
 
-          <select
+          <SegmentedControl
             value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            className="rounded-xl border border-white/10 bg-[#111a2b] px-3 py-2.5 text-sm text-slate-300 outline-none focus:border-cyan-400/60"
-          >
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+            onChange={setCategory}
+            options={categories}
+          />
 
-          <button
-            type="button"
-            onClick={() => loadSOARData(true)}
-            disabled={refreshing}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 px-4 py-2.5 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/10 disabled:opacity-50"
-          >
-            <RefreshCw
-              size={16}
-              className={refreshing ? "animate-spin" : ""}
-            />
-            Refresh
-          </button>
+          <span className="text-xs tabular-nums text-slate-500 lg:ml-auto">
+            {filteredWorkflows.length} of {workflows.length}
+          </span>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
-          {/* Action cards */}
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                SOAR Response Actions
-              </h2>
+        {/* ------------------------------------------------ playbook list */}
 
-              <span className="text-xs text-slate-500">
-                {filteredWorkflows.length} actions
-              </span>
+        {loading ? (
+          <Panel>
+            <LoadingState label="Loading SOAR actions" rows={4} />
+          </Panel>
+        ) : filteredWorkflows.length === 0 ? (
+          <Panel>
+            <EmptyState
+              icon={Workflow}
+              title={
+                workflows.length === 0
+                  ? "No SOAR actions yet"
+                  : "No playbooks match these filters"
+              }
+              description={
+                workflows.length === 0
+                  ? "Create a playbook from an incident, and the generated response actions appear here."
+                  : "Clear the category filter or search for a different term."
+              }
+            />
+          </Panel>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            {filteredWorkflows.map((workflow) => {
+              const Icon = workflow.icon;
+
+              return (
+                <button
+                  key={workflow.id}
+                  type="button"
+                  onClick={() => setSelectedWorkflow(workflow)}
+                  className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50/60"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+                        <Icon size={17} />
+                      </span>
+
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900">
+                          {workflow.name}
+                        </p>
+
+                        <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+                          {workflow.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <StatusBadge status={workflow.status} />
+                  </div>
+
+                  <p className="mt-4 line-clamp-2 flex-1 text-sm leading-6 text-slate-500">
+                    {workflow.description}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3.5">
+                    <Badge tone={CATEGORY_TONE[workflow.category] || "slate"}>
+                      {workflow.category}
+                    </Badge>
+
+                    <span className="text-xs text-slate-500">
+                      Trigger: {workflow.trigger}
+                    </span>
+
+                    <span className="ml-auto text-xs tabular-nums text-slate-500">
+                      {workflow.runs} runs
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ------------------------------------------------- playbook panel */}
+
+      <SidePanel
+        open={Boolean(selectedWorkflow)}
+        onClose={() => setSelectedWorkflow(null)}
+        title={selectedWorkflow?.name}
+        subtitle={selectedWorkflow?.id}
+        footer={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="success"
+              icon={Check}
+              loading={actionLoading === "approve"}
+              disabled={Boolean(actionLoading)}
+              onClick={() => runSOARAction("approve")}
+            >
+              Approve
+            </Button>
+
+            <Button
+              variant="outlineDanger"
+              icon={X}
+              loading={actionLoading === "reject"}
+              disabled={Boolean(actionLoading)}
+              onClick={() => runSOARAction("reject")}
+            >
+              Reject
+            </Button>
+
+            <Button
+              variant="primary"
+              icon={Play}
+              loading={actionLoading === "execute"}
+              disabled={Boolean(actionLoading)}
+              onClick={() => runSOARAction("execute")}
+            >
+              Execute
+            </Button>
+          </div>
+        }
+      >
+        {selectedWorkflow && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={selectedWorkflow.status} />
+
+              <Badge tone={CATEGORY_TONE[selectedWorkflow.category] || "slate"}>
+                {selectedWorkflow.category}
+              </Badge>
+
+              {isSimulation && <Badge tone="amber">Simulation</Badge>}
             </div>
 
-            {loading ? (
-              <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-10 text-center">
-                <Loader2
-                  size={28}
-                  className="mx-auto animate-spin text-cyan-400"
-                />
-                <p className="mt-3 text-sm text-slate-400">
-                  Loading SOAR actions from backend...
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {filteredWorkflows.map((workflow) => {
-                  const Icon = workflow.icon;
-                  const isActive = workflow.status === "Active";
-                  const isSelected = selectedWorkflow?.id === workflow.id;
+            <p className="text-sm leading-6 text-slate-700">
+              {selectedWorkflow.description}
+            </p>
 
-                  return (
-                    <div
-                      key={workflow.id}
-                      className={`rounded-2xl border bg-[#111a2b] p-5 transition ${
-                        isSelected
-                          ? "border-cyan-400/60"
-                          : "border-white/10 hover:border-cyan-400/30"
-                      }`}
-                    >
-                      <div className="mb-4 flex items-start justify-between gap-3">
-                        <div className="rounded-xl bg-cyan-400/10 p-3 text-cyan-400">
-                          <Icon size={23} />
-                        </div>
+            <div>
+              <h3 className="mb-2.5 text-sm font-semibold text-slate-900">
+                Response steps
+              </h3>
 
-                        <Badge
-                          className={
-                            isActive
-                              ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                              : workflow.status === "Pending"
-                              ? "border-yellow-400/20 bg-yellow-400/10 text-yellow-300"
-                              : "border-orange-400/20 bg-orange-400/10 text-orange-300"
-                          }
-                        >
-                          {workflow.status}
-                        </Badge>
-                      </div>
-
-                      <p className="mb-2 text-[11px] font-semibold tracking-wider text-slate-500">
-                        {workflow.id}
-                      </p>
-
-                      <h3 className="text-base font-bold text-white">
-                        {workflow.name}
-                      </h3>
-
-                      <p className="mt-2 min-h-[60px] text-sm leading-6 text-slate-400">
-                        {workflow.description}
-                      </p>
-
-                      <div className="mt-4">
-                        <Badge
-                          className={
-                            categoryStyles[workflow.category] ||
-                            categoryStyles["Endpoint Response"]
-                          }
-                        >
-                          {workflow.category}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3 border-y border-white/10 py-4">
-                        <div>
-                          <p className="text-xs text-slate-500">Executions</p>
-                          <p className="mt-1 text-lg font-bold text-white">
-                            {workflow.runs}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-slate-500">
-                            Success Rate
-                          </p>
-                          <p className="mt-1 text-lg font-bold text-emerald-400">
-                            {workflow.successRate > 0
-                              ? `${workflow.successRate}%`
-                              : "—"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <ActionButton
-                          onClick={() => setSelectedWorkflow(workflow)}
-                          className="flex-1 border border-white/10 text-slate-300 hover:border-cyan-400/40 hover:text-cyan-300"
-                        >
-                          View Details
-                          <ChevronRight size={16} />
-                        </ActionButton>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {!loading && filteredWorkflows.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-slate-500">
-                No SOAR actions match your search.
-              </div>
-            )}
-          </section>
-
-          {/* Details */}
-          <aside className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-              <div className="mb-5 flex items-center gap-2">
-                <Workflow size={18} className="text-cyan-400" />
-
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Action Details
-                </h2>
-              </div>
-
-              {selectedWorkflow ? (
-                <div>
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs text-slate-500">
-                        {selectedWorkflow.id}
-                      </p>
-
-                      <h3 className="mt-1 text-lg font-bold text-white">
-                        {selectedWorkflow.name}
-                      </h3>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedWorkflow(null)}
-                      className="text-slate-500 transition hover:text-white"
-                    >
-                      <X size={17} />
-                    </button>
-                  </div>
-
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      Trigger
-                    </p>
-
-                    <div className="rounded-xl border border-white/10 bg-[#0d1727] p-3 text-sm text-cyan-300">
-                      {selectedWorkflow.trigger}
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      Response Actions
-                    </p>
-
-                    <div className="space-y-2">
-                      {selectedWorkflow.actions.map((action, index) => (
-                        <div
-                          key={`${selectedWorkflow.id}-${index}`}
-                          className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#0d1727] p-3"
-                        >
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-xs font-bold text-cyan-300">
-                            {index + 1}
-                          </span>
-
-                          <span className="text-sm text-slate-300">
-                            {action}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {selectedWorkflow.approvedBy && (
-                    <div className="mb-4 rounded-xl border border-white/10 bg-[#0d1727] p-3 text-xs text-slate-400">
-                      Approved by:{" "}
-                      <span className="text-slate-200">
-                        {toText(selectedWorkflow.approvedBy)}
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedWorkflow.result && (
-                    <div className="mb-4 rounded-xl border border-white/10 bg-[#0d1727] p-3 text-xs text-slate-400">
-                      Result:
-                      <p className="mt-1 break-words text-slate-200">
-                        {toText(selectedWorkflow.result)}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 xl:grid-cols-1">
-                    <ActionButton
-                      onClick={() => runSOARAction("approve")}
-                      loading={actionLoading === "approve"}
-                      disabled={Boolean(actionLoading)}
-                      className="border border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
-                    >
-                      <Check size={16} />
-                      Approve
-                    </ActionButton>
-
-                    <ActionButton
-                      onClick={() => runSOARAction("reject")}
-                      loading={actionLoading === "reject"}
-                      disabled={Boolean(actionLoading)}
-                      className="border border-red-400/20 bg-red-400/10 text-red-300 hover:bg-red-400/20"
-                    >
-                      <XCircle size={16} />
-                      Reject
-                    </ActionButton>
-
-                    <ActionButton
-                      onClick={() => runSOARAction("execute")}
-                      loading={actionLoading === "execute"}
-                      disabled={Boolean(actionLoading)}
-                      className="bg-cyan-400 text-[#06111e] hover:bg-cyan-300"
-                    >
-                      <Play size={16} />
-                      Execute
-                    </ActionButton>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-white/10 bg-[#0d1727] p-6 text-center">
-                  <Workflow
-                    className="mx-auto text-slate-600"
-                    size={30}
-                  />
-
-                  <p className="mt-3 text-sm text-slate-400">
-                    Select a SOAR action to view its trigger, response steps,
-                    and available backend controls.
-                  </p>
-                </div>
-              )}
-            </section>
-
-            {/* Backend information */}
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <ShieldAlert size={18} className="text-cyan-400" />
-
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Backend Information
-                </h2>
-              </div>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Service</span>
-                  <span className="text-slate-200">
-                    {toText(health?.service, "SOAR")}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Mode</span>
-                  <span
-                    className={
-                      isSimulation
-                        ? "text-yellow-300"
-                        : "text-emerald-300"
-                    }
+              <ol className="space-y-2">
+                {selectedWorkflow.actions.map((step, index) => (
+                  <li
+                    key={`${step}-${index}`}
+                    className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700"
                   >
-                    {toText(health?.mode, "Unknown")}
-                  </span>
-                </div>
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-semibold tabular-nums text-slate-500 ring-1 ring-slate-200">
+                      {index + 1}
+                    </span>
 
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Actions loaded</span>
-                  <span className="text-slate-200">
-                    {workflows.length}
-                  </span>
-                </div>
-              </div>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
 
-              {isSimulation && (
-                <div className="mt-4 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-xs leading-5 text-yellow-200">
-                  Simulation mode is enabled. Approve, reject, and execute
-                  requests may simulate security actions instead of changing
-                  real infrastructure.
-                </div>
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-slate-900">
+                Execution record
+              </h3>
+
+              <InfoRow label="Trigger" value={selectedWorkflow.trigger} />
+
+              <InfoRow label="Runs" value={selectedWorkflow.runs} />
+
+              <InfoRow
+                label="Success rate"
+                value={
+                  selectedWorkflow.successRate > 0
+                    ? `${selectedWorkflow.successRate}%`
+                    : "Not reported"
+                }
+              />
+
+              <InfoRow label="Last run" value={selectedWorkflow.lastRun} />
+
+              {selectedWorkflow.approvedBy && (
+                <InfoRow
+                  label="Approved by"
+                  value={toText(selectedWorkflow.approvedBy)}
+                />
               )}
-            </section>
 
-            {/* Recent activity */}
-            <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-              <div className="mb-5 flex items-center gap-2">
-                <RefreshCw size={18} className="text-cyan-400" />
+              {selectedWorkflow.approvalNote && (
+                <InfoRow
+                  label="Approval note"
+                  value={toText(selectedWorkflow.approvalNote)}
+                />
+              )}
+            </div>
 
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  Recent Activity
-                </h2>
-              </div>
+            {selectedWorkflow.result && (
+              <Card className="p-4">
+                <p className="text-xs text-slate-500">Execution result</p>
 
-              {workflows.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  No recent SOAR activity available.
+                <p className="mt-1.5 text-sm leading-6 text-slate-800">
+                  {toText(selectedWorkflow.result)}
                 </p>
-              ) : (
-                <div className="space-y-4">
-                  {workflows.slice(0, 5).map((workflow) => (
-                    <div
-                      key={`activity-${workflow.id}`}
-                      className="border-b border-white/10 pb-4 last:border-0 last:pb-0"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-lg bg-cyan-400/10 p-2 text-cyan-400">
-                          <Activity size={16} />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-white">
-                            {workflow.name}
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-500">
-                            {workflow.lastRun}
-                          </p>
-                        </div>
-
-                        <Badge className="border-white/10 bg-white/5 text-slate-300">
-                          {workflow.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </aside>
-        </div>
-      </div>
-    </div>
+              </Card>
+            )}
+          </div>
+        )}
+      </SidePanel>
+    </AppShell>
   );
 }

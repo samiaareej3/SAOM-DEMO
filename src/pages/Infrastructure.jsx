@@ -1,190 +1,144 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const ASSETS = [
-  {
-    id: "AST-001",
-    name: "Production Web Server",
-    hostname: "VM-WEB-01",
-    type: "Virtual Machine",
-    ip: "10.0.0.21",
-    os: "Ubuntu 22.04",
-    status: "Online",
-    risk: "Low",
-    lastHeartbeat: "12 seconds ago",
-    location: "Production Cluster",
+import { Boxes } from "lucide-react";
+
+import { getAssets } from "../services/dashboardApi";
+
+import {
+  AppShell,
+  Badge,
+  Cell,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PageHeader,
+  Panel,
+  SearchInput,
+  SegmentedControl,
+  Select,
+  SeverityBadge,
+  SeverityBar,
+  SidePanel,
+  SpineRow,
+  StatCard,
+  StatusBadge,
+  Table,
+} from "../components/ui";
+
+/* =========================================================
+   HELPERS  (unchanged — backend field mapping)
+========================================================= */
+
+function normalizeAsset(asset, index) {
+  const statusValue = asset.status || asset.health || asset.state || "Offline";
+  const riskValue =
+    asset.risk ||
+    asset.risk_level ||
+    asset.riskLevel ||
+    asset.severity ||
+    "Low";
+
+  const normalizedStatus =
+    String(statusValue).charAt(0).toUpperCase() +
+    String(statusValue).slice(1).toLowerCase();
+
+  const normalizedRisk =
+    String(riskValue).charAt(0).toUpperCase() +
+    String(riskValue).slice(1).toLowerCase();
+
+  return {
+    id: asset.id || asset._id || `AST-${String(index + 1).padStart(3, "0")}`,
+    name: asset.name || asset.asset_name || asset.hostname || "Unnamed Asset",
+    hostname: asset.hostname || asset.host || asset.name || "Unknown Host",
+    type: asset.type || asset.asset_type || asset.category || "Unknown",
+    ip: asset.ip || asset.ip_address || asset.ipAddress || "N/A",
+    os: asset.os || asset.operating_system || asset.operatingSystem || "N/A",
+    status: normalizedStatus,
+    risk: normalizedRisk,
+    lastHeartbeat:
+      asset.lastHeartbeat ||
+      asset.last_heartbeat ||
+      asset.lastSeen ||
+      asset.last_seen ||
+      "N/A",
+    location: asset.location || asset.network || "Unknown Location",
     description:
-      "Primary production web server responsible for customer-facing services.",
-  },
-  {
-    id: "AST-002",
-    name: "Database Server",
-    hostname: "VM-DB-01",
-    type: "Virtual Machine",
-    ip: "10.0.0.22",
-    os: "Ubuntu 22.04",
-    status: "Online",
-    risk: "High",
-    lastHeartbeat: "18 seconds ago",
-    location: "Production Cluster",
-    description:
-      "Primary database server containing application and security data.",
-  },
-  {
-    id: "AST-003",
-    name: "Employee Workstation",
-    hostname: "VM-EMP-01",
-    type: "Workstation",
-    ip: "192.168.1.24",
-    os: "Windows 11",
-    status: "Online",
-    risk: "Critical",
-    lastHeartbeat: "32 seconds ago",
-    location: "Corporate Network",
-    description:
-      "Employee workstation with recent suspicious authentication activity.",
-  },
-  {
-    id: "AST-004",
-    name: "Security Monitoring Node",
-    hostname: "SAOM-SENSOR-01",
-    type: "Security Sensor",
-    ip: "10.0.0.50",
-    os: "Debian 12",
-    status: "Online",
-    risk: "Low",
-    lastHeartbeat: "8 seconds ago",
-    location: "Security Network",
-    description:
-      "Security telemetry collection and monitoring sensor.",
-  },
-  {
-    id: "AST-005",
-    name: "Development Machine",
-    hostname: "DEV-PC-01",
-    type: "Workstation",
-    ip: "192.168.1.66",
-    os: "Windows 10",
-    status: "Offline",
-    risk: "Medium",
-    lastHeartbeat: "18 minutes ago",
-    location: "Development Network",
-    description:
-      "Development workstation currently unavailable for monitoring.",
-  },
-  {
-    id: "AST-006",
-    name: "Internal API Server",
-    hostname: "VM-API-01",
-    type: "Virtual Machine",
-    ip: "10.0.0.42",
-    os: "Ubuntu 20.04",
-    status: "Online",
-    risk: "Medium",
-    lastHeartbeat: "44 seconds ago",
-    location: "Application Cluster",
-    description:
-      "Internal API service supporting application integrations.",
-  },
-];
-
-const RISK_STYLES = {
-  Critical: {
-    text: "text-red-300",
-    border: "border-red-400/30",
-    background: "bg-red-400/10",
-    dot: "bg-red-400",
-  },
-  High: {
-    text: "text-orange-300",
-    border: "border-orange-400/30",
-    background: "bg-orange-400/10",
-    dot: "bg-orange-400",
-  },
-  Medium: {
-    text: "text-yellow-300",
-    border: "border-yellow-400/30",
-    background: "bg-yellow-400/10",
-    dot: "bg-yellow-400",
-  },
-  Low: {
-    text: "text-emerald-300",
-    border: "border-emerald-400/30",
-    background: "bg-emerald-400/10",
-    dot: "bg-emerald-400",
-  },
-};
-
-const STATUS_STYLES = {
-  Online: "text-emerald-300 border-emerald-400/20 bg-emerald-400/10",
-  Offline: "text-red-300 border-red-400/20 bg-red-400/10",
-};
-
-function RiskBadge({ risk }) {
-  const style = RISK_STYLES[risk] || RISK_STYLES.Low;
-
-  return (
-    <span
-      className={`inline-flex items-center gap-2 border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${style.border} ${style.background} ${style.text}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-      {risk}
-    </span>
-  );
-}
-
-function StatusBadge({ status }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${
-        STATUS_STYLES[status] || STATUS_STYLES.Offline
-      }`}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          status === "Online" ? "bg-emerald-400" : "bg-red-400"
-        }`}
-      />
-
-      {status}
-    </span>
-  );
-}
-
-function SummaryCard({ label, value, description, accent }) {
-  return (
-    <article className="border border-white/[0.08] bg-[#080e15] p-5">
-      <div className={`mb-4 h-1 w-10 ${accent}`} />
-
-      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-100">
-        {value}
-      </p>
-
-      <p className="mt-2 text-xs text-slate-500">{description}</p>
-    </article>
-  );
+      asset.description ||
+      asset.details ||
+      "No description available for this asset.",
+  };
 }
 
 export default function Infrastructure() {
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [riskFilter, setRiskFilter] = useState("All");
   const [selectedAsset, setSelectedAsset] = useState(null);
 
-  const summary = useMemo(() => {
-    return {
-      total: ASSETS.length,
-      online: ASSETS.filter((asset) => asset.status === "Online").length,
-      offline: ASSETS.filter((asset) => asset.status === "Offline").length,
-      critical: ASSETS.filter((asset) => asset.risk === "Critical").length,
+  /* View mode is presentation-only state; it never touches the request. */
+  const [view, setView] = useState("table");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAssets() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await getAssets();
+
+        const receivedAssets = Array.isArray(response)
+          ? response
+          : response?.assets ||
+            response?.data ||
+            response?.results ||
+            [];
+
+        const formattedAssets = receivedAssets.map(normalizeAsset);
+
+        if (isMounted) {
+          setAssets(formattedAssets);
+        }
+      } catch (requestError) {
+        console.error("Failed to load infrastructure assets:", requestError);
+
+        if (isMounted) {
+          setError(
+            requestError.message ||
+              "Unable to load infrastructure assets from backend."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadAssets();
+
+    return () => {
+      isMounted = false;
     };
   }, []);
 
+  const summary = useMemo(() => {
+    return {
+      total: assets.length,
+      online: assets.filter((asset) => asset.status === "Online").length,
+      offline: assets.filter((asset) => asset.status === "Offline").length,
+      critical: assets.filter((asset) => asset.risk === "Critical").length,
+    };
+  }, [assets]);
+
   const filteredAssets = useMemo(() => {
-    return ASSETS.filter((asset) => {
+    return assets.filter((asset) => {
       const searchableText = [
         asset.id,
         asset.name,
@@ -194,6 +148,7 @@ export default function Infrastructure() {
         asset.os,
         asset.location,
       ]
+        .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
@@ -202,390 +157,322 @@ export default function Infrastructure() {
       const matchesStatus =
         statusFilter === "All" || asset.status === statusFilter;
 
-      const matchesRisk = riskFilter === "All" || asset.risk === riskFilter;
+      const matchesRisk =
+        riskFilter === "All" || asset.risk === riskFilter;
 
       return matchesSearch && matchesStatus && matchesRisk;
     });
-  }, [search, statusFilter, riskFilter]);
+  }, [assets, search, statusFilter, riskFilter]);
+
+  /* ------------------ derived views over the same asset list ------------ */
+
+  const riskCounts = useMemo(() => {
+    const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+
+    assets.forEach((asset) => {
+      if (counts[asset.risk] !== undefined) counts[asset.risk] += 1;
+    });
+
+    return counts;
+  }, [assets]);
+
+  const byType = useMemo(() => {
+    const tally = new Map();
+
+    assets.forEach((asset) => {
+      tally.set(asset.type, (tally.get(asset.type) || 0) + 1);
+    });
+
+    return [...tally.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value }));
+  }, [assets]);
+
+  const availability =
+    summary.total > 0
+      ? Math.round((summary.online / summary.total) * 100)
+      : 0;
 
   return (
-    <main className="min-h-screen space-y-6 bg-[#05080d] px-6 py-6 text-slate-200">
-      {/* HEADER */}
-      <section className="flex flex-col justify-between gap-5 border-b border-white/[0.06] pb-6 lg:flex-row lg:items-end">
-        <div>
-          <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-400/70">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-            Security Operations / Infrastructure
-          </div>
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Operations"
+        title="Infrastructure"
+        description="Every asset reporting to SAOM-AI, with its health, exposure and last heartbeat."
+        status={
+          <Badge tone={summary.offline > 0 ? "amber" : "emerald"}>
+            {availability}% of assets online
+          </Badge>
+        }
+        actions={
+          <SegmentedControl
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "table", label: "Table" },
+              { value: "cards", label: "Cards" },
+            ]}
+          />
+        }
+      />
 
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
-            Infrastructure
-          </h1>
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
+        {error && <Notice tone="error">{error}</Notice>}
 
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
-            Monitor infrastructure health, asset availability and risk across
-            your connected environment.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 self-start border border-emerald-400/20 bg-emerald-400/[0.04] px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-emerald-400 lg:self-auto">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Asset Monitoring Active
-        </div>
-      </section>
-
-      {/* SUMMARY */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          label="Total Assets"
-          value={summary.total}
-          description="Registered monitored assets"
-          accent="bg-cyan-400"
-        />
-
-        <SummaryCard
-          label="Online Assets"
-          value={summary.online}
-          description="Currently responding"
-          accent="bg-emerald-400"
-        />
-
-        <SummaryCard
-          label="Offline Assets"
-          value={summary.offline}
-          description="Not responding to heartbeat"
-          accent="bg-red-400"
-        />
-
-        <SummaryCard
-          label="Critical Risk"
-          value={summary.critical}
-          description="Assets requiring attention"
-          accent="bg-orange-400"
-        />
-      </section>
-
-      {/* ASSET REGISTRY */}
-      <section className="border border-white/[0.08] bg-[#080e15]">
-        <div className="flex flex-col justify-between gap-4 border-b border-white/[0.07] p-5 xl:flex-row xl:items-center">
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">
-              Asset Registry
-            </p>
-
-            <h2 className="mt-2 text-lg font-semibold text-slate-100">
-              Monitored Infrastructure
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Review connected systems, health status and risk levels.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              {filteredAssets.length} Results
-            </span>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setStatusFilter("All");
-                setRiskFilter("All");
-              }}
-              className="border border-white/[0.1] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-300"
-            >
-              Reset Filters
-            </button>
-          </div>
-        </div>
-
-        {/* FILTERS */}
-        <div className="grid grid-cols-1 gap-3 border-b border-white/[0.07] p-5 md:grid-cols-3">
-          <input
-            type="text"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search asset, hostname, IP..."
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/50"
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Critical exposure"
+            value={summary.critical}
+            tone={summary.critical > 0 ? "critical" : "good"}
+            emphasis
+            hint="Assets at critical risk"
           />
 
-          <select
+          <StatCard
+            label="Online"
+            value={summary.online}
+            tone="good"
+            hint="Heartbeat received"
+          />
+
+          <StatCard
+            label="Offline"
+            value={summary.offline}
+            tone={summary.offline > 0 ? "high" : "good"}
+            hint="No recent heartbeat"
+          />
+
+          <StatCard
+            label="Total assets"
+            value={summary.total}
+            tone="brand"
+            hint="In the monitored inventory"
+            icon={Boxes}
+          />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Panel title="Risk across the estate">
+            <SeverityBar counts={riskCounts} />
+          </Panel>
+
+          <Panel title="Inventory by type">
+            {byType.length === 0 ? (
+              <EmptyState
+                title="No asset types reported"
+                description="Type is read from the asset record returned by the backend."
+              />
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {byType.map((item) => (
+                  <li key={item.label}>
+                    <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+                      {item.label}
+
+                      <span className="font-semibold tabular-nums text-slate-900">
+                        {item.value}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+
+        {/* ---------------------------------------------------- filter bar */}
+
+        <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+          <SearchInput
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search hostname, IP, OS or location"
+            className="lg:max-w-sm lg:flex-1"
+          />
+
+          <Select
+            label="Status"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-300 outline-none focus:border-cyan-400/50"
+            className="lg:w-40"
           >
-            <option value="All">All Statuses</option>
-            <option value="Online">Online</option>
-            <option value="Offline">Offline</option>
-          </select>
+            {["All", "Online", "Offline"].map((status) => (
+              <option key={status} value={status}>
+                {status === "All" ? "All statuses" : status}
+              </option>
+            ))}
+          </Select>
 
-          <select
+          <SegmentedControl
             value={riskFilter}
-            onChange={(event) => setRiskFilter(event.target.value)}
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-300 outline-none focus:border-cyan-400/50"
-          >
-            <option value="All">All Risk Levels</option>
-            <option value="Critical">Critical</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-          </select>
+            onChange={setRiskFilter}
+            options={["All", "Critical", "High", "Medium", "Low"]}
+          />
+
+          <span className="text-xs tabular-nums text-slate-500 lg:ml-auto">
+            {filteredAssets.length} of {assets.length}
+          </span>
         </div>
 
-        {/* TABLE */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-white/[0.07] bg-white/[0.015]">
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Asset
-                </th>
+        {/* -------------------------------------------------- asset views */}
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Type
-                </th>
+        {loading ? (
+          <Panel>
+            <LoadingState label="Loading asset inventory" rows={5} />
+          </Panel>
+        ) : filteredAssets.length === 0 ? (
+          <Panel>
+            <EmptyState
+              icon={Boxes}
+              title={
+                assets.length === 0
+                  ? "No assets returned"
+                  : "No assets match these filters"
+              }
+              description={
+                assets.length === 0
+                  ? "The asset endpoint responded with an empty inventory."
+                  : "Clear a filter to widen the inventory view."
+              }
+            />
+          </Panel>
+        ) : view === "table" ? (
+          <Panel className="overflow-hidden">
+            <div className="-m-5">
+              <Table
+                columns={[
+                  { key: "spine", label: "", className: "w-[3px] p-0" },
+                  { key: "asset", label: "Asset" },
+                  { key: "type", label: "Type" },
+                  { key: "ip", label: "Address" },
+                  { key: "os", label: "Platform" },
+                  { key: "risk", label: "Risk" },
+                  { key: "status", label: "Status" },
+                  { key: "seen", label: "Last heartbeat", align: "right" },
+                ]}
+              >
+                {filteredAssets.map((asset) => (
+                  <SpineRow
+                    key={asset.id}
+                    severity={asset.risk}
+                    selected={selectedAsset?.id === asset.id}
+                    onClick={() => setSelectedAsset(asset)}
+                  >
+                    <Cell>
+                      <p className="font-medium text-slate-900">{asset.name}</p>
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  IP Address
-                </th>
+                      <p className="mt-0.5 font-mono text-xs text-slate-500">
+                        {asset.hostname}
+                      </p>
+                    </Cell>
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Operating System
-                </th>
+                    <Cell className="text-slate-700">{asset.type}</Cell>
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Status
-                </th>
+                    <Cell className="font-mono text-[13px] text-slate-600">
+                      {asset.ip}
+                    </Cell>
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Risk
-                </th>
+                    <Cell className="text-slate-700">{asset.os}</Cell>
 
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Heartbeat
-                </th>
+                    <Cell>
+                      <SeverityBadge severity={asset.risk} />
+                    </Cell>
 
-                <th className="px-5 py-4 text-right text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Action
-                </th>
-              </tr>
-            </thead>
+                    <Cell>
+                      <StatusBadge status={asset.status} />
+                    </Cell>
 
-            <tbody>
-              {filteredAssets.map((asset) => (
-                <tr
-                  key={asset.id}
-                  className="border-b border-white/[0.06] transition hover:bg-cyan-400/[0.025]"
-                >
-                  <td className="px-5 py-5">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center border border-cyan-400/20 bg-cyan-400/[0.04] text-xs text-cyan-300">
-                        ▣
-                      </div>
+                    <Cell className="text-right text-xs text-slate-500">
+                      {asset.lastHeartbeat}
+                    </Cell>
+                  </SpineRow>
+                ))}
+              </Table>
+            </div>
+          </Panel>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredAssets.map((asset) => (
+              <button
+                key={asset.id}
+                type="button"
+                onClick={() => setSelectedAsset(asset)}
+                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50/60"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">
+                      {asset.name}
+                    </p>
 
-                      <div>
-                        <p className="text-[10px] font-bold tracking-wider text-cyan-400/70">
-                          {asset.id}
-                        </p>
+                    <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
+                      {asset.ip}
+                    </p>
+                  </div>
 
-                        <p className="mt-1 text-sm font-medium text-slate-200">
-                          {asset.name}
-                        </p>
+                  <StatusBadge status={asset.status} />
+                </div>
 
-                        <p className="mt-1 text-[10px] text-slate-600">
-                          {asset.hostname}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
+                <p className="mt-4 line-clamp-2 text-sm leading-6 text-slate-500">
+                  {asset.description}
+                </p>
 
-                  <td className="px-5 py-5 text-xs text-slate-400">
-                    {asset.type}
-                  </td>
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3.5">
+                  <span className="truncate text-xs text-slate-500">
+                    {asset.type} · {asset.location}
+                  </span>
 
-                  <td className="px-5 py-5 font-mono text-xs text-slate-400">
-                    {asset.ip}
-                  </td>
-
-                  <td className="px-5 py-5 text-xs text-slate-400">
-                    {asset.os}
-                  </td>
-
-                  <td className="px-5 py-5">
-                    <StatusBadge status={asset.status} />
-                  </td>
-
-                  <td className="px-5 py-5">
-                    <RiskBadge risk={asset.risk} />
-                  </td>
-
-                  <td className="px-5 py-5 text-xs text-slate-500">
-                    {asset.lastHeartbeat}
-                  </td>
-
-                  <td className="px-5 py-5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAsset(asset)}
-                      className="border border-white/[0.1] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-400 transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.04] hover:text-cyan-300"
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredAssets.length === 0 && (
-          <div className="px-5 py-16 text-center">
-            <p className="text-sm font-medium text-slate-300">
-              No assets found
-            </p>
-
-            <p className="mt-2 text-xs text-slate-600">
-              Try changing your search or filter selection.
-            </p>
+                  <SeverityBadge severity={asset.risk} />
+                </div>
+              </button>
+            ))}
           </div>
         )}
-      </section>
+      </div>
 
-      {/* ASSET DETAIL MODAL */}
-      {selectedAsset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-2xl border border-white/[0.1] bg-[#080e15]">
-            <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] p-5">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">
-                  Asset Details
-                </p>
+      <SidePanel
+        open={Boolean(selectedAsset)}
+        onClose={() => setSelectedAsset(null)}
+        title={selectedAsset?.name}
+        subtitle={selectedAsset?.hostname}
+      >
+        {selectedAsset && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={selectedAsset.status} />
 
-                <h2 className="mt-2 text-xl font-semibold text-slate-100">
-                  {selectedAsset.name}
-                </h2>
+              <SeverityBadge severity={selectedAsset.risk} />
 
-                <p className="mt-1 text-xs text-slate-600">
-                  {selectedAsset.id}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedAsset(null)}
-                className="text-xl text-slate-500 transition hover:text-white"
-                aria-label="Close asset details"
-              >
-                ×
-              </button>
+              <Badge tone="slate">{selectedAsset.type}</Badge>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Hostname
-                </p>
+            <p className="text-sm leading-6 text-slate-700">
+              {selectedAsset.description}
+            </p>
 
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedAsset.hostname}
-                </p>
-              </div>
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-slate-900">
+                Asset record
+              </h3>
 
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  IP Address
-                </p>
+              <InfoRow label="Asset ID" value={selectedAsset.id} mono />
 
-                <p className="mt-2 font-mono text-sm text-slate-300">
-                  {selectedAsset.ip}
-                </p>
-              </div>
+              <InfoRow label="Hostname" value={selectedAsset.hostname} mono />
 
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Operating System
-                </p>
+              <InfoRow label="IP address" value={selectedAsset.ip} mono />
 
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedAsset.os}
-                </p>
-              </div>
+              <InfoRow label="Platform" value={selectedAsset.os} />
 
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Asset Type
-                </p>
+              <InfoRow label="Location" value={selectedAsset.location} />
 
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedAsset.type}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Location
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedAsset.location}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Last Heartbeat
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedAsset.lastHeartbeat}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Status
-                </p>
-
-                <div className="mt-2">
-                  <StatusBadge status={selectedAsset.status} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Risk Level
-                </p>
-
-                <div className="mt-2">
-                  <RiskBadge risk={selectedAsset.risk} />
-                </div>
-              </div>
-
-              <div className="sm:col-span-2">
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Description
-                </p>
-
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  {selectedAsset.description}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t border-white/[0.08] p-5">
-              <button
-                type="button"
-                onClick={() => setSelectedAsset(null)}
-                className="border border-cyan-400/30 bg-cyan-400/[0.06] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400/[0.12]"
-              >
-                Close Details
-              </button>
+              <InfoRow
+                label="Last heartbeat"
+                value={selectedAsset.lastHeartbeat}
+              />
             </div>
           </div>
-        </div>
-      )}
-    </main>
+        )}
+      </SidePanel>
+    </AppShell>
   );
 }

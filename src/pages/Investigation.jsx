@@ -1,22 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+
 import {
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
-  Eye,
-  FileText,
-  Lock,
+  Check,
+  Copy,
+  FileSearch,
   Network,
-  Search,
+  RefreshCw,
   Send,
-  Server,
   ShieldAlert,
-  Terminal,
-  User,
 } from "lucide-react";
 
 import {
@@ -25,32 +17,39 @@ import {
   investigateAttack,
 } from "../services/dashboardApi";
 
-/* -------------------------------------------------------------------------- */
-/* Constants                                                                  */
-/* -------------------------------------------------------------------------- */
+import {
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PageHeader,
+  Panel,
+  RawPayload,
+  SearchInput,
+  SeverityBadge,
+  StatCard,
+  StatusBadge,
+  Timeline,
+  severityTone,
+} from "../components/ui";
 
-const severityStyles = {
-  Critical: "bg-red-500/15 text-red-400 border-red-500/30",
-  High: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  Medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-  Low: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
-};
-
-const statusStyles = {
-  Active: "bg-red-500/15 text-red-300 border-red-500/20",
-  Investigating: "bg-cyan-500/15 text-cyan-300 border-cyan-500/20",
-  Resolved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
-};
-
-/* -------------------------------------------------------------------------- */
-/* Utility Functions                                                          */
-/* -------------------------------------------------------------------------- */
+/* ============================================================================
+   HELPERS  (unchanged — backend field mapping)
+============================================================================ */
 
 function getValue(object, keys, fallback = "") {
   for (const key of keys) {
     const value = object?.[key];
 
-    if (value !== undefined && value !== null && value !== "") {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
       return value;
     }
   }
@@ -103,7 +102,7 @@ function formatDate(value) {
 }
 
 function getIncidentTime(incident) {
-  const possibleDate = getValue(incident, [
+  const value = getValue(incident, [
     "createdAt",
     "created_at",
     "timestamp",
@@ -118,16 +117,12 @@ function getIncidentTime(incident) {
     "date",
   ]);
 
-  const parsedTime = new Date(possibleDate).getTime();
+  const parsed = new Date(value).getTime();
 
-  if (!Number.isNaN(parsedTime) && parsedTime > 0) {
-    return parsedTime;
+  if (!Number.isNaN(parsed) && parsed > 0) {
+    return parsed;
   }
 
-  /*
-   * MongoDB ObjectId contains a creation timestamp in its first
-   * eight hexadecimal characters. This is used only as a fallback.
-   */
   const rawId = getValue(incident, [
     "_id",
     "id",
@@ -284,7 +279,6 @@ function normalizeIncident(alert, index = 0) {
         "source_address",
         "sourceAddress",
         "ip",
-        "source",
       ],
       "Unknown source"
     ),
@@ -348,98 +342,60 @@ function extractResultPayload(response) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Reusable Components                                                        */
-/* -------------------------------------------------------------------------- */
+function getResultSummary(result) {
+  if (!result) return null;
 
-function Badge({ children, className = "" }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function SectionCard({
-  title,
-  icon: Icon,
-  children,
-  action = null,
-}) {
-  return (
-    <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5 shadow-xl shadow-black/10">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon size={18} className="text-cyan-400" />
-
-          <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-            {title}
-          </h2>
-        </div>
-
-        {action}
-      </div>
-
-      {children}
-    </section>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  tone = "cyan",
-}) {
-  const tones = {
-    cyan: "text-cyan-400 bg-cyan-400/10",
-    red: "text-red-400 bg-red-400/10",
-    orange: "text-orange-400 bg-orange-400/10",
-    green: "text-emerald-400 bg-emerald-400/10",
-  };
+  if (typeof result === "string") {
+    return result;
+  }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#111a2b] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-slate-400">
-          {label}
-        </span>
-
-        <div className={`rounded-xl p-2 ${tones[tone]}`}>
-          <Icon size={17} />
-        </div>
-      </div>
-
-      <p className="mt-3 text-2xl font-bold text-white">
-        {value}
-      </p>
-    </div>
+    result.summary ||
+    result.message ||
+    result.explanation ||
+    result.analysis ||
+    result.result ||
+    null
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Main Component                                                             */
-/* -------------------------------------------------------------------------- */
 
 export default function Investigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const incomingIncident = location.state?.incident || null;
+  /*
+   * Threat Intelligence sends the selected alert through
+   * React Router state:
+   *
+   * navigate("/investigation", {
+   *   state: { incident: indicator.rawAlert }
+   * })
+   */
+  const incomingIncident =
+    location.state?.incident || null;
 
   const [incidents, setIncidents] = useState([]);
 
   const [selectedId, setSelectedId] = useState(
-    incomingIncident?.id
-      ? String(incomingIncident.id)
+    incomingIncident?.id ||
+      incomingIncident?._id
+      ? String(
+          incomingIncident.id ||
+            incomingIncident._id
+        )
       : ""
   );
 
   const [search, setSearch] = useState("");
-  const [note, setNote] = useState("");
-  const [notes, setNotes] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [actionLoading, setActionLoading] =
+    useState("");
+
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const [investigationResult, setInvestigationResult] =
     useState(null);
@@ -447,99 +403,138 @@ export default function Investigation() {
   const [backtrackResult, setBacktrackResult] =
     useState(null);
 
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState("");
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [notes, setNotes] = useState([]);
+  const [note, setNote] = useState("");
 
-  /* ------------------------------------------------------------------------ */
-  /* Load and sort incidents                                                  */
-  /* ------------------------------------------------------------------------ */
+  const [copied, setCopied] = useState("");
 
-  const loadIncidents = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  /* --------------------------------------------------------------------------
+     LOAD INCIDENTS
+  -------------------------------------------------------------------------- */
 
-    try {
-      const response = await getAlerts();
+  const loadIncidents = useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-      const normalized = extractAlerts(response)
-        .map((alert, index) =>
-          normalizeIncident(alert, index)
-        )
-        .sort((a, b) => {
-          return getIncidentTime(b) - getIncidentTime(a);
-        });
+      setError("");
 
-      setIncidents(normalized);
+      try {
+        const response = await getAlerts();
 
-      if (normalized.length > 0) {
-        const incomingId = incomingIncident?.id
-          ? String(incomingIncident.id)
-          : "";
+        const normalized = extractAlerts(response)
+          .map((alert, index) =>
+            normalizeIncident(alert, index)
+          )
+          .sort(
+            (a, b) =>
+              getIncidentTime(b) -
+              getIncidentTime(a)
+          );
 
-        const incomingExists = normalized.some(
-          (incident) =>
-            String(incident.id) === incomingId
+        setIncidents(normalized);
+
+        /*
+         * If Threat Intelligence sent an incident,
+         * preserve/select that exact incident.
+         */
+        const incomingId =
+          incomingIncident?.id ||
+          incomingIncident?._id
+            ? String(
+                incomingIncident.id ||
+                  incomingIncident._id
+              )
+            : "";
+
+        const incomingExists =
+          incomingId &&
+          normalized.some(
+            (incident) =>
+              String(incident.id) ===
+              incomingId
+          );
+
+        if (incomingExists) {
+          setSelectedId(incomingId);
+        } else if (normalized.length > 0) {
+          /*
+           * Otherwise select the newest alert.
+           */
+          setSelectedId(
+            String(normalized[0].id)
+          );
+        } else if (incomingIncident) {
+          /*
+           * Fallback if backend doesn't return
+           * the incoming incident.
+           */
+          const fallback =
+            normalizeIncident(
+              incomingIncident,
+              0
+            );
+
+          setIncidents([fallback]);
+          setSelectedId(String(fallback.id));
+        } else {
+          setSelectedId("");
+        }
+      } catch (requestError) {
+        console.error(
+          "Investigation alerts error:",
+          requestError
+        );
+
+        setError(
+          requestError?.message ||
+            "Unable to load security incidents."
         );
 
         /*
-         * If Attack Graph passes an incident, open that incident.
-         * Otherwise, automatically select the newest incident.
+         * If we arrived from Threat Intelligence,
+         * still allow investigation of that alert.
          */
-        setSelectedId(
-          incomingExists
-            ? incomingId
-            : String(normalized[0].id)
-        );
-      } else if (incomingIncident) {
-        const fallbackIncident = normalizeIncident(
-          incomingIncident,
-          0
-        );
+        if (incomingIncident) {
+          const fallback =
+            normalizeIncident(
+              incomingIncident,
+              0
+            );
 
-        setIncidents([fallbackIncident]);
-        setSelectedId(String(fallbackIncident.id));
-      } else {
-        setSelectedId("");
+          setIncidents([fallback]);
+          setSelectedId(String(fallback.id));
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-    } catch (requestError) {
-      setError(
-        requestError?.message ||
-          "Unable to load incidents for investigation."
-      );
-
-      if (incomingIncident) {
-        const fallbackIncident = normalizeIncident(
-          incomingIncident,
-          0
-        );
-
-        setIncidents([fallbackIncident]);
-        setSelectedId(String(fallbackIncident.id));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [incomingIncident]);
+    },
+    [incomingIncident]
+  );
 
   useEffect(() => {
     loadIncidents();
   }, [loadIncidents]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Derived data                                                             */
-  /* ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     DERIVED DATA
+  -------------------------------------------------------------------------- */
 
   const filteredIncidents = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = search
+      .trim()
+      .toLowerCase();
 
     if (!query) {
       return incidents;
     }
 
-    return incidents.filter((incident) => {
-      return [
+    return incidents.filter((incident) =>
+      [
         incident.id,
         incident.title,
         incident.type,
@@ -549,20 +544,21 @@ export default function Investigation() {
         incident.sourceIp,
         incident.destinationIp,
         incident.user,
+        incident.description,
       ]
         .join(" ")
         .toLowerCase()
-        .includes(query);
-    });
+        .includes(query)
+    );
   }, [incidents, search]);
 
   const selectedIncident = useMemo(() => {
     return (
       incidents.find(
         (incident) =>
-          String(incident.id) === String(selectedId)
+          String(incident.id) ===
+          String(selectedId)
       ) ||
-      incidents[0] ||
       null
     );
   }, [incidents, selectedId]);
@@ -588,39 +584,44 @@ export default function Investigation() {
     };
   }, [incidents]);
 
-  /* ------------------------------------------------------------------------ */
-  /* Analyst Notes                                                            */
-  /* ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     INCIDENT SELECTION
+  -------------------------------------------------------------------------- */
 
-  function addNote() {
-    const trimmedNote = note.trim();
+  function handleIncidentSelect(id) {
+    setSelectedId(String(id));
 
-    if (!trimmedNote) {
-      return;
-    }
+    setInvestigationResult(null);
+    setBacktrackResult(null);
 
-    setNotes((currentNotes) => [
-      ...currentNotes,
-      {
-        id: `${Date.now()}-${currentNotes.length}`,
-        author: "You",
-        time: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        text: trimmedNote,
-      },
-    ]);
+    setMessage("");
+    setError("");
 
+    /*
+     * Clear old notes when switching incidents.
+     * Notes here are session-local analyst notes.
+     */
+    setNotes([]);
     setNote("");
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Investigation Actions                                                    */
-  /* ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     INVESTIGATION
+  -------------------------------------------------------------------------- */
 
   async function handleInvestigation() {
-    if (!selectedIncident?.asset) {
+    if (!selectedIncident) {
+      setMessage(
+        "Select an incident before starting an investigation."
+      );
+      return;
+    }
+
+    if (
+      !selectedIncident.asset ||
+      selectedIncident.asset ===
+        "Unknown asset"
+    ) {
       setMessage(
         "No target asset is available for this incident."
       );
@@ -633,18 +634,25 @@ export default function Investigation() {
     setInvestigationResult(null);
 
     try {
-      const response = await investigateAttack(
-        selectedIncident.asset
-      );
+      const response =
+        await investigateAttack(
+          selectedIncident.asset
+        );
 
-      setInvestigationResult(
-        extractResultPayload(response)
-      );
+      const result =
+        extractResultPayload(response);
+
+      setInvestigationResult(result);
 
       setMessage(
         "Investigation completed successfully."
       );
     } catch (requestError) {
+      console.error(
+        "Investigation request failed:",
+        requestError
+      );
+
       setError(
         requestError?.message ||
           "The backend could not complete the investigation."
@@ -654,8 +662,23 @@ export default function Investigation() {
     }
   }
 
+  /* --------------------------------------------------------------------------
+     BACKTRACK
+  -------------------------------------------------------------------------- */
+
   async function handleBacktrack() {
-    if (!selectedIncident?.asset) {
+    if (!selectedIncident) {
+      setMessage(
+        "Select an incident before starting attack backtracking."
+      );
+      return;
+    }
+
+    if (
+      !selectedIncident.asset ||
+      selectedIncident.asset ===
+        "Unknown asset"
+    ) {
       setMessage(
         "No target asset is available for attack backtracking."
       );
@@ -668,18 +691,25 @@ export default function Investigation() {
     setBacktrackResult(null);
 
     try {
-      const response = await backtrackAttack(
-        selectedIncident.asset
-      );
+      const response =
+        await backtrackAttack(
+          selectedIncident.asset
+        );
 
-      setBacktrackResult(
-        extractResultPayload(response)
-      );
+      const result =
+        extractResultPayload(response);
+
+      setBacktrackResult(result);
 
       setMessage(
         "Attack backtracking completed successfully."
       );
     } catch (requestError) {
+      console.error(
+        "Backtracking request failed:",
+        requestError
+      );
+
       setError(
         requestError?.message ||
           "The backend could not complete attack backtracking."
@@ -689,577 +719,491 @@ export default function Investigation() {
     }
   }
 
-  function handleIncidentSelect(incidentId) {
-    setSelectedId(String(incidentId));
-    setInvestigationResult(null);
-    setBacktrackResult(null);
-    setMessage("");
-    setError("");
+  /* --------------------------------------------------------------------------
+     COPY
+  -------------------------------------------------------------------------- */
+
+  async function copyValue(value, key) {
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(
+        String(value)
+      );
+
+      setCopied(key);
+
+      window.setTimeout(() => {
+        setCopied("");
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "Copy failed:",
+        error
+      );
+    }
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* Render                                                                   */
-  /* ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     NOTES
+  -------------------------------------------------------------------------- */
+
+  function addNote() {
+    const trimmed = note.trim();
+
+    if (!trimmed) return;
+
+    setNotes((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${current.length}`,
+        author: "You",
+        time: new Date().toLocaleTimeString(
+          [],
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+          }
+        ),
+        text: trimmed,
+      },
+    ]);
+
+    setNote("");
+  }
+
+  /* --------------------------------------------------------------------------
+     RESULT RENDERER
+  -------------------------------------------------------------------------- */
+
+  function ResultViewer({ result, label }) {
+    if (!result) return null;
+
+    const summaryText = getResultSummary(result);
+
+    return (
+      <div className="space-y-3">
+        {summaryText && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs text-slate-500">{label}</p>
+
+            <p className="mt-1.5 text-sm leading-6 text-slate-800">
+              {typeof summaryText === "string"
+                ? summaryText
+                : JSON.stringify(summaryText, null, 2)}
+            </p>
+          </div>
+        )}
+
+        <RawPayload value={result} />
+      </div>
+    );
+  }
+
+  /* --------------------------------------------------------------------------
+     COPY BUTTON
+  -------------------------------------------------------------------------- */
+
+  function CopyAction({ value, fieldKey }) {
+    return (
+      <button
+        type="button"
+        onClick={() => copyValue(value, fieldKey)}
+        className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+        aria-label={`Copy ${fieldKey}`}
+      >
+        {copied === fieldKey ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    );
+  }
+
+  /* ==========================================================================
+     RENDER
+  ========================================================================== */
+
+  const attackChain = selectedIncident
+    ? [
+        {
+          id: "source",
+          title: selectedIncident.sourceIp,
+          description: "Origin of the observed activity",
+          severity: selectedIncident.severity,
+          time: formatDate(selectedIncident.createdAt),
+        },
+        {
+          id: "event",
+          title: selectedIncident.type,
+          description: selectedIncident.description,
+          severity: selectedIncident.severity,
+        },
+        {
+          id: "asset",
+          title: selectedIncident.asset,
+          description: `Destination ${selectedIncident.destinationIp} · account ${selectedIncident.user}`,
+          severity: selectedIncident.severity,
+        },
+      ]
+    : [];
 
   return (
-    <div className="min-h-screen bg-[#08111f] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px]">
-        {/* Page Header */}
-        <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-cyan-400"
-            >
-              <ArrowLeft size={16} />
-              Back to Dashboard
-            </button>
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Analysis"
+        title="Investigation"
+        description="Work one incident at a time: read its chain, run backend analysis and keep notes as you go."
+        status={
+          selectedIncident ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <SeverityBadge severity={selectedIncident.severity} />
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-cyan-400/10 p-3 text-cyan-400">
-                <ShieldAlert size={28} />
-              </div>
-
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  Investigation Center
-                </h1>
-
-                <p className="mt-1 text-sm text-slate-400">
-                  Investigate incidents, review backend results,
-                  and backtrack attack activity.
-                </p>
-              </div>
+              <StatusBadge status={selectedIncident.status} />
             </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => navigate("/incidents")}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20"
+          ) : (
+            <Badge tone="slate">No incident selected</Badge>
+          )
+        }
+        actions={
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            loading={refreshing}
+            onClick={() => loadIncidents(true)}
+            disabled={refreshing || loading}
           >
-            View All Incidents
-            <ChevronRight size={16} />
-          </button>
-        </div>
+            Refresh
+          </Button>
+        }
+      />
 
-        {/* Statistics */}
-        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label="Total Incidents"
-            value={summary.total}
-            icon={Activity}
-          />
-
-          <StatCard
-            label="Critical Cases"
-            value={summary.critical}
-            icon={AlertTriangle}
-            tone="red"
-          />
-
-          <StatCard
-            label="Active Cases"
-            value={summary.active}
-            icon={Clock3}
-            tone="orange"
-          />
-
-          <StatCard
-            label="Resolved Cases"
-            value={summary.resolved}
-            icon={CheckCircle2}
-            tone="green"
-          />
-        </div>
-
-        {/* Notifications */}
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-400/20 bg-red-400/[0.06] p-4 text-sm text-red-300">
-            {error}
-          </div>
-        )}
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
+        {error && <Notice tone="error">{error}</Notice>}
 
         {message && (
-          <div className="mb-6 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] p-4 text-sm text-cyan-300">
+          <Notice tone="info" onDismiss={() => setMessage("")}>
             {message}
-          </div>
+          </Notice>
         )}
 
-        {/* Main Layout */}
-        <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-          {/* Incident Sidebar */}
-          <aside className="rounded-2xl border border-white/10 bg-[#0d1727] p-4">
-            <div className="mb-4">
-              <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-white">
-                Backend Incidents
-              </h2>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Critical"
+            value={summary.critical}
+            tone={summary.critical > 0 ? "critical" : "good"}
+            emphasis
+            hint="Across the incident queue"
+          />
 
-              <div className="relative">
-                <Search
-                  size={17}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                />
+          <StatCard
+            label="Active"
+            value={summary.active}
+            tone={summary.active > 0 ? "high" : "good"}
+            hint="Not yet resolved"
+          />
 
-                <input
-                  value={search}
-                  onChange={(event) =>
-                    setSearch(event.target.value)
-                  }
-                  placeholder="Search incidents..."
-                  className="w-full rounded-xl border border-white/10 bg-[#111a2b] py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/60"
-                />
-              </div>
-            </div>
+          <StatCard
+            label="Resolved"
+            value={summary.resolved}
+            tone="good"
+            hint="Closed by an analyst"
+          />
+
+          <StatCard
+            label="Total"
+            value={summary.total}
+            hint="Returned by the alerts endpoint"
+          />
+        </div>
+
+        {/* ---------------------------- three-column investigation workspace */}
+
+        <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+          {/* ------------------------------------------- left: queue */}
+
+          <Panel
+            title="Incidents"
+            hint={`${filteredIncidents.length} of ${incidents.length}`}
+            className="self-start overflow-hidden"
+          >
+            <SearchInput
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Filter the queue"
+            />
 
             {loading ? (
-              <div className="py-10 text-center text-sm text-slate-500">
-                Loading incidents...
+              <div className="mt-4">
+                <LoadingState label="Loading incidents" rows={4} />
               </div>
+            ) : filteredIncidents.length === 0 ? (
+              <EmptyState
+                title="No incidents"
+                description="Nothing matches this filter."
+              />
             ) : (
-              <div className="space-y-3">
+              <ul className="-mx-5 -mb-5 mt-4 max-h-[560px] divide-y divide-slate-100 overflow-y-auto border-t border-slate-100">
                 {filteredIncidents.map((incident) => {
                   const active =
-                    String(selectedId) ===
-                    String(incident.id);
+                    String(incident.id) === String(selectedId);
+
+                  const tone = severityTone(incident.severity);
 
                   return (
-                    <button
-                      type="button"
-                      key={incident.id}
-                      onClick={() =>
-                        handleIncidentSelect(incident.id)
-                      }
-                      className={`w-full rounded-xl border p-4 text-left transition ${
-                        active
-                          ? "border-cyan-400/60 bg-cyan-400/10"
-                          : "border-white/10 bg-[#111a2b] hover:border-cyan-400/30"
-                      }`}
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="truncate text-[11px] font-semibold text-slate-500">
-                          {incident.id}
-                        </span>
-
+                    <li key={incident.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleIncidentSelect(incident.id)}
+                        className={`flex w-full gap-3 px-5 py-3 text-left transition-colors duration-150 ${
+                          active ? "bg-indigo-50/70" : "hover:bg-slate-50"
+                        }`}
+                      >
                         <span
-                          className={`h-2 w-2 rounded-full ${
-                            incident.status === "Resolved"
-                              ? "bg-emerald-400"
-                              : incident.severity === "Critical"
-                              ? "bg-red-400"
-                              : "bg-orange-400"
-                          }`}
+                          className={`mt-0.5 h-8 w-[3px] shrink-0 rounded-full ${tone.spine}`}
                         />
-                      </div>
 
-                      <h3 className="line-clamp-2 text-sm font-semibold text-white">
-                        {incident.title}
-                      </h3>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-slate-900">
+                            {incident.title}
+                          </span>
 
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {incident.asset}
-                      </p>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className={
-                            severityStyles[
-                              incident.severity
-                            ]
-                          }
-                        >
-                          {incident.severity}
-                        </Badge>
-
-                        <Badge
-                          className={
-                            statusStyles[incident.status] ||
-                            statusStyles.Active
-                          }
-                        >
-                          {incident.status}
-                        </Badge>
-                      </div>
-                    </button>
+                          <span className="mt-0.5 block truncate text-xs text-slate-500">
+                            {incident.asset} · {incident.status}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
                   );
                 })}
-
-                {filteredIncidents.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-500">
-                    No incidents found.
-                  </div>
-                )}
-              </div>
+              </ul>
             )}
-          </aside>
+          </Panel>
 
-          {/* Main Investigation Area */}
-          <main className="space-y-6">
+          {/* --------------------------------------- centre: workspace */}
+
+          <div className="space-y-4">
             {!selectedIncident ? (
-              <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-8 text-center">
-                <p className="text-sm text-slate-400">
-                  Select an incident to begin investigation.
-                </p>
-              </section>
+              <Panel>
+                <EmptyState
+                  icon={FileSearch}
+                  title="Select an incident to investigate"
+                  description="Pick one from the queue on the left. Its attack chain, analysis tools and evidence appear here."
+                />
+              </Panel>
             ) : (
               <>
-                {/* Selected Incident */}
-                <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-                  <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-                    <div>
-                      <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <Badge
-                          className={
-                            severityStyles[
-                              selectedIncident.severity
-                            ]
-                          }
-                        >
-                          {selectedIncident.severity} Severity
-                        </Badge>
-
-                        <Badge
-                          className={
-                            statusStyles[
-                              selectedIncident.status
-                            ] || statusStyles.Active
-                          }
-                        >
-                          {selectedIncident.status}
-                        </Badge>
-
-                        <span className="text-xs text-slate-500">
-                          {selectedIncident.id}
-                        </span>
-                      </div>
-
-                      <h2 className="text-xl font-bold text-white sm:text-2xl">
+                <Card className="p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-semibold text-slate-900">
                         {selectedIncident.title}
                       </h2>
 
-                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                        {selectedIncident.description}
+                      <p className="mt-1 font-mono text-xs text-slate-500">
+                        {selectedIncident.id} · {selectedIncident.type}
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate("/incidents")
-                      }
-                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
-                    >
-                      <Eye size={16} />
-                      Incident Details
-                    </button>
-                  </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        icon={FileSearch}
+                        loading={actionLoading === "investigate"}
+                        disabled={Boolean(actionLoading)}
+                        onClick={handleInvestigation}
+                      >
+                        {actionLoading === "investigate"
+                          ? "Investigating"
+                          : "Run investigation"}
+                      </Button>
 
-                  <div className="mt-5 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                      <p className="mb-1 text-xs text-slate-500">
-                        Affected Asset
-                      </p>
-
-                      <div className="flex items-center gap-2 break-all text-sm font-medium text-white">
-                        <Server
-                          size={15}
-                          className="shrink-0 text-cyan-400"
-                        />
-                        {selectedIncident.asset}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-1 text-xs text-slate-500">
-                        Source IP
-                      </p>
-
-                      <div className="flex items-center gap-2 break-all font-mono text-sm text-white">
-                        <Network
-                          size={15}
-                          className="shrink-0 text-cyan-400"
-                        />
-                        {selectedIncident.sourceIp}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-1 text-xs text-slate-500">
-                        User Account
-                      </p>
-
-                      <div className="flex items-center gap-2 break-all text-sm font-medium text-white">
-                        <Lock
-                          size={15}
-                          className="shrink-0 text-cyan-400"
-                        />
-                        {selectedIncident.user}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-1 text-xs text-slate-500">
-                        Detected At
-                      </p>
-
-                      <div className="flex items-center gap-2 text-sm font-medium text-white">
-                        <Clock3
-                          size={15}
-                          className="shrink-0 text-cyan-400"
-                        />
-                        {formatDate(
-                          selectedIncident.createdAt
-                        )}
-                      </div>
+                      <Button
+                        icon={Network}
+                        loading={actionLoading === "backtrack"}
+                        disabled={Boolean(actionLoading)}
+                        onClick={handleBacktrack}
+                      >
+                        {actionLoading === "backtrack"
+                          ? "Backtracking"
+                          : "Backtrack attack"}
+                      </Button>
                     </div>
                   </div>
-                </section>
 
-                {/* Investigation Actions */}
-                <section className="rounded-2xl border border-white/10 bg-[#111a2b] p-5">
-                  <div className="mb-5 flex items-center gap-2">
-                    <Terminal
-                      size={18}
-                      className="text-cyan-400"
+                  <p className="mt-4 max-w-[76ch] text-[15px] leading-7 text-slate-700">
+                    {selectedIncident.description}
+                  </p>
+                </Card>
+
+                <Panel title="Attack chain" hint="Source, event and target as reported">
+                  <Timeline items={attackChain} />
+                </Panel>
+
+                {investigationResult && (
+                  <Panel title="Investigation result">
+                    <ResultViewer
+                      result={investigationResult}
+                      label="Backend analysis"
+                    />
+                  </Panel>
+                )}
+
+                {backtrackResult && (
+                  <Panel title="Attack backtracking">
+                    <ResultViewer
+                      result={backtrackResult}
+                      label="Reconstructed attack path"
+                    />
+                  </Panel>
+                )}
+
+                <Panel
+                  title="Analyst notes"
+                  hint="Kept in this session only — not sent to the backend"
+                >
+                  <div className="flex gap-2">
+                    <input
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") addNote();
+                      }}
+                      placeholder="Record what you observed"
+                      className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                     />
 
-                    <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                      Investigation Actions
-                    </h2>
+                    <Button
+                      variant="primary"
+                      icon={Send}
+                      onClick={addNote}
+                      disabled={!note.trim()}
+                    >
+                      Add note
+                    </Button>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={handleInvestigation}
-                      disabled={Boolean(actionLoading)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-[#06111e] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <ShieldAlert size={17} />
+                  {notes.length > 0 && (
+                    <ul className="mt-4 space-y-2.5">
+                      {notes.map((entry) => (
+                        <li
+                          key={entry.id}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                        >
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-xs font-medium text-slate-700">
+                              {entry.author}
+                            </span>
 
-                      {actionLoading === "investigate"
-                        ? "Investigating..."
-                        : "Run Investigation"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleBacktrack}
-                      disabled={Boolean(actionLoading)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-400/10 px-4 py-3 text-sm font-semibold text-violet-300 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Network size={17} />
-
-                      {actionLoading === "backtrack"
-                        ? "Backtracking..."
-                        : "Backtrack Attack"}
-                    </button>
-                  </div>
-                </section>
-
-                {/* Investigation Result */}
-                {investigationResult && (
-                  <SectionCard
-                    title="Investigation Result"
-                    icon={Activity}
-                  >
-                    <pre className="max-h-[500px] overflow-auto rounded-xl border border-white/10 bg-[#0a111d] p-4 text-xs leading-6 text-cyan-200">
-                      {JSON.stringify(
-                        investigationResult,
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </SectionCard>
-                )}
-
-                {/* Backtracking Result */}
-                {backtrackResult && (
-                  <SectionCard
-                    title="Attack Backtracking Result"
-                    icon={Network}
-                  >
-                    <pre className="max-h-[500px] overflow-auto rounded-xl border border-white/10 bg-[#0a111d] p-4 text-xs leading-6 text-violet-200">
-                      {JSON.stringify(
-                        backtrackResult,
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </SectionCard>
-                )}
-
-                {/* Context and Summary */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <SectionCard
-                    title="Incident Context"
-                    icon={FileText}
-                  >
-                    <div className="space-y-3">
-                      <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">
-                          Alert Type
-                        </p>
-
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {selectedIncident.type}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">
-                          Severity
-                        </p>
-
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {selectedIncident.severity}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">
-                          Status
-                        </p>
-
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {selectedIncident.status}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-[#0d1727] p-3">
-                        <p className="text-xs text-slate-500">
-                          Destination IP
-                        </p>
-
-                        <p className="mt-1 break-all font-mono text-sm font-semibold text-white">
-                          {selectedIncident.destinationIp}
-                        </p>
-                      </div>
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard
-                    title="Investigation Summary"
-                    icon={Terminal}
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
-                        <span className="text-sm text-slate-400">
-                          Investigation Status
-                        </span>
-
-                        <span className="text-sm font-semibold text-cyan-300">
-                          {investigationResult
-                            ? "Completed"
-                            : "Not Started"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
-                        <span className="text-sm text-slate-400">
-                          Backtracking Status
-                        </span>
-
-                        <span className="text-sm font-semibold text-violet-300">
-                          {backtrackResult
-                            ? "Completed"
-                            : "Not Started"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0d1727] p-3">
-                        <span className="text-sm text-slate-400">
-                          Analyst Notes
-                        </span>
-
-                        <span className="text-sm font-bold text-white">
-                          {notes.length}
-                        </span>
-                      </div>
-                    </div>
-                  </SectionCard>
-                </div>
-
-                {/* Analyst Notes */}
-                <SectionCard
-                  title="Analyst Notes"
-                  icon={User}
-                >
-                  <div className="space-y-4">
-                    {notes.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-500">
-                        No analyst notes have been added yet.
-                      </div>
-                    )}
-
-                    {notes.map((item) => (
-                      <div
-                        key={item.id}
-                        className="rounded-xl border border-white/10 bg-[#0d1727] p-4"
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <div className="rounded-full bg-cyan-400/10 p-1.5 text-cyan-400">
-                              <User size={14} />
-                            </div>
-
-                            <span className="text-sm font-semibold text-white">
-                              {item.author}
+                            <span className="text-xs tabular-nums text-slate-400">
+                              {entry.time}
                             </span>
                           </div>
 
-                          <span className="text-xs text-slate-500">
-                            {item.time}
-                          </span>
-                        </div>
-
-                        <p className="text-sm leading-6 text-slate-400">
-                          {item.text}
-                        </p>
-                      </div>
-                    ))}
-
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <textarea
-                        value={note}
-                        onChange={(event) =>
-                          setNote(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === "Enter" &&
-                            event.ctrlKey
-                          ) {
-                            addNote();
-                          }
-                        }}
-                        placeholder="Add an investigation note..."
-                        rows={3}
-                        className="min-h-[90px] flex-1 resize-y rounded-xl border border-white/10 bg-[#0d1727] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/60"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={addNote}
-                        disabled={!note.trim()}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-[#06111e] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40 sm:self-end"
-                      >
-                        <Send size={16} />
-                        Add Note
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-slate-600">
-                      Tip: Press Ctrl + Enter to add a note.
-                    </p>
-                  </div>
-                </SectionCard>
+                          <p className="mt-1 text-sm leading-6 text-slate-700">
+                            {entry.text}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
               </>
             )}
-          </main>
+          </div>
+
+          {/* ------------------------------------ right: intelligence */}
+
+          <div className="space-y-4">
+            <Panel title="Incident record">
+              {!selectedIncident ? (
+                <p className="text-sm text-slate-500">
+                  Select an incident to see its metadata.
+                </p>
+              ) : (
+                <div>
+                  <InfoRow
+                    label="Incident ID"
+                    value={selectedIncident.id}
+                    mono
+                    action={
+                      <CopyAction
+                        value={selectedIncident.id}
+                        fieldKey="Incident ID"
+                      />
+                    }
+                  />
+
+                  <InfoRow
+                    label="Source IP"
+                    value={selectedIncident.sourceIp}
+                    mono
+                    action={
+                      <CopyAction
+                        value={selectedIncident.sourceIp}
+                        fieldKey="Source IP"
+                      />
+                    }
+                  />
+
+                  <InfoRow
+                    label="Destination"
+                    value={selectedIncident.destinationIp}
+                    mono
+                    action={
+                      <CopyAction
+                        value={selectedIncident.destinationIp}
+                        fieldKey="Destination"
+                      />
+                    }
+                  />
+
+                  <InfoRow label="Asset" value={selectedIncident.asset} />
+
+                  <InfoRow label="Account" value={selectedIncident.user} />
+
+                  <InfoRow
+                    label="Detected"
+                    value={formatDate(selectedIncident.createdAt)}
+                  />
+
+                  <InfoRow
+                    label="Classification"
+                    value={selectedIncident.type}
+                  />
+                </div>
+              )}
+            </Panel>
+
+            <Panel title="Next steps">
+              <div className="space-y-2">
+                <Button
+                  variant="secondary"
+                  icon={ShieldAlert}
+                  className="w-full justify-start"
+                  onClick={() => navigate("/incidents")}
+                >
+                  Back to incident queue
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  icon={Network}
+                  className="w-full justify-start"
+                  onClick={() => navigate("/attack-graph")}
+                >
+                  View the attack graph
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  className="w-full justify-start"
+                  onClick={() => navigate("/automation")}
+                >
+                  Open response automation
+                </Button>
+              </div>
+            </Panel>
+          </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

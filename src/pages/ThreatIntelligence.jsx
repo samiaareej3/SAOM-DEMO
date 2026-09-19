@@ -1,195 +1,165 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-const INDICATORS = [
-  {
-    id: "TI-001",
-    value: "185.220.101.45",
-    type: "IP Address",
-    threat: "Command and Control",
-    severity: "Critical",
-    confidence: 98,
-    source: "Threat Intelligence Feed",
-    firstSeen: "Today, 10:24 AM",
-    lastSeen: "2 minutes ago",
-    status: "Active",
-    description:
-      "Known malicious IP associated with command-and-control infrastructure and suspicious outbound traffic.",
-  },
-  {
-    id: "TI-002",
-    value: "login-security-check.com",
-    type: "Domain",
-    threat: "Phishing",
-    severity: "High",
-    confidence: 94,
-    source: "External Intelligence",
-    firstSeen: "Today, 09:42 AM",
-    lastSeen: "14 minutes ago",
-    status: "Active",
-    description:
-      "Suspicious domain impersonating an authentication portal and potentially collecting user credentials.",
-  },
-  {
-    id: "TI-003",
-    value: "44d88612fea8a8f36de82e1278abb02f",
-    type: "File Hash",
-    threat: "Malware",
-    severity: "High",
-    confidence: 91,
-    source: "Malware Database",
-    firstSeen: "Yesterday",
-    lastSeen: "28 minutes ago",
-    status: "Active",
-    description:
-      "File hash associated with a known malware sample detected in external intelligence sources.",
-  },
-  {
-    id: "TI-004",
-    value: "203.0.113.77",
-    type: "IP Address",
-    threat: "Port Scanning",
-    severity: "Medium",
-    confidence: 82,
-    source: "Network Sensor",
-    firstSeen: "Yesterday",
-    lastSeen: "42 minutes ago",
-    status: "Investigating",
-    description:
-      "External IP observed scanning multiple ports across monitored infrastructure.",
-  },
-  {
-    id: "TI-005",
-    value: "update-system-service.net",
-    type: "Domain",
-    threat: "Suspicious Infrastructure",
-    severity: "Medium",
-    confidence: 79,
-    source: "Domain Reputation Feed",
-    firstSeen: "2 days ago",
-    lastSeen: "1 hour ago",
-    status: "Active",
-    description:
-      "Recently registered domain with suspicious naming patterns and low reputation.",
-  },
-  {
-    id: "TI-006",
-    value: "eicar-test-file-signature",
-    type: "File Hash",
-    threat: "Test Detection",
-    severity: "Low",
-    confidence: 99,
-    source: "Internal Security Test",
-    firstSeen: "3 days ago",
-    lastSeen: "3 hours ago",
-    status: "Resolved",
-    description:
-      "Controlled security testing indicator used to verify detection and alerting workflows.",
-  },
-];
+import { Check, Copy, FileSearch, Radar } from "lucide-react";
 
-const SEVERITY_STYLES = {
-  Critical: {
-    text: "text-red-300",
-    border: "border-red-400/30",
-    background: "bg-red-400/10",
-    dot: "bg-red-400",
-  },
-  High: {
-    text: "text-orange-300",
-    border: "border-orange-400/30",
-    background: "bg-orange-400/10",
-    dot: "bg-orange-400",
-  },
-  Medium: {
-    text: "text-yellow-300",
-    border: "border-yellow-400/30",
-    background: "bg-yellow-400/10",
-    dot: "bg-yellow-400",
-  },
-  Low: {
-    text: "text-emerald-300",
-    border: "border-emerald-400/30",
-    background: "bg-emerald-400/10",
-    dot: "bg-emerald-400",
-  },
-};
+import { getAlerts } from "../services/dashboardApi";
 
-function SeverityBadge({ severity }) {
-  const style = SEVERITY_STYLES[severity] || SEVERITY_STYLES.Low;
+import {
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  Cell,
+  Donut,
+  EmptyState,
+  InfoRow,
+  LoadingState,
+  Notice,
+  PALETTE,
+  PageHeader,
+  Panel,
+  SearchInput,
+  SegmentedControl,
+  Select,
+  SeverityBadge,
+  SidePanel,
+  SpineRow,
+  StatCard,
+  StatusBadge,
+  Table,
+} from "../components/ui";
 
-  return (
-    <span
-      className={`inline-flex items-center gap-2 border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${style.border} ${style.background} ${style.text}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-      {severity}
-    </span>
-  );
-}
+const SEVERITIES = ["All", "Critical", "High", "Medium", "Low"];
 
-function TypeBadge({ type }) {
-  return (
-    <span className="inline-flex border border-cyan-400/20 bg-cyan-400/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-cyan-300">
-      {type}
-    </span>
-  );
-}
+/* =========================================================
+   HELPERS  (unchanged — backend field mapping)
+========================================================= */
 
-function StatusBadge({ status }) {
-  const styles = {
-    Active: "border-red-400/20 bg-red-400/10 text-red-300",
-    Investigating: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
-    Resolved: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+function normalizeAlert(alert, index) {
+  const severity = alert.severity || "Low";
+
+  const sourceIp =
+    alert.source_ip ||
+    alert.sourceIp ||
+    alert.ip_address ||
+    alert.ip ||
+    "Unknown";
+
+  const attackType =
+    alert.attack_type ||
+    alert.attackType ||
+    alert.title ||
+    "Unknown Threat";
+
+  const timestamp =
+    alert.detection_timestamp ||
+    alert.detected_at ||
+    alert.createdAt ||
+    alert.timestamp ||
+    null;
+
+  const status =
+    alert.status ||
+    (severity === "Critical" || severity === "High"
+      ? "Active"
+      : "Investigating");
+
+  return {
+    id: alert._id || alert.id || `TI-${String(index + 1).padStart(3, "0")}`,
+    value: sourceIp,
+    type: sourceIp.includes(".") ? "IP Address" : "Indicator",
+    threat: attackType,
+    severity,
+    confidence:
+      alert.confidence !== undefined
+        ? Number(alert.confidence)
+        : Math.min(99, Math.max(60, Number(alert.risk_score || 60))),
+    source: alert.source || "SAOM-AI Detection Engine",
+    firstSeen: timestamp
+      ? new Date(timestamp).toLocaleString()
+      : "Unknown",
+    lastSeen: timestamp
+      ? new Date(timestamp).toLocaleString()
+      : "Unknown",
+    status,
+    description:
+      alert.description ||
+      `Threat detected by SAOM-AI for ${attackType}.`,
+    rawAlert: alert,
   };
-
-  return (
-    <span
-      className={`inline-flex border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${
-        styles[status] || styles.Active
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function SummaryCard({ label, value, description, accent }) {
-  return (
-    <article className="border border-white/[0.08] bg-[#080e15] p-5">
-      <div className={`mb-4 h-1 w-10 ${accent}`} />
-
-      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-100">
-        {value}
-      </p>
-
-      <p className="mt-2 text-xs text-slate-500">{description}</p>
-    </article>
-  );
 }
 
 export default function ThreatIntelligence() {
+  const navigate = useNavigate();
+
+  const [indicators, setIndicators] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [severityFilter, setSeverityFilter] = useState("All");
   const [selectedIndicator, setSelectedIndicator] = useState(null);
   const [copiedIndicator, setCopiedIndicator] = useState("");
 
-  const summary = useMemo(() => {
-    return {
-      total: INDICATORS.length,
-      active: INDICATORS.filter((item) => item.status === "Active").length,
-      critical: INDICATORS.filter((item) => item.severity === "Critical")
-        .length,
-      highConfidence: INDICATORS.filter((item) => item.confidence >= 90).length,
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadThreatIntelligence() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await getAlerts();
+
+        const alerts = Array.isArray(response)
+          ? response
+          : response?.alerts ||
+            response?.data ||
+            response?.results ||
+            [];
+
+        const normalizedIndicators = alerts.map(normalizeAlert);
+
+        if (mounted) {
+          setIndicators(normalizedIndicators);
+        }
+      } catch (err) {
+        console.error("Threat intelligence loading failed:", err);
+
+        if (mounted) {
+          setError(
+            err?.message || "Unable to load threat intelligence data."
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadThreatIntelligence();
+
+    return () => {
+      mounted = false;
     };
   }, []);
 
+  const summary = useMemo(() => {
+    return {
+      total: indicators.length,
+      active: indicators.filter((item) => item.status === "Active").length,
+      critical: indicators.filter((item) => item.severity === "Critical")
+        .length,
+      highConfidence: indicators.filter((item) => item.confidence >= 90)
+        .length,
+    };
+  }, [indicators]);
+
   const filteredIndicators = useMemo(() => {
-    return INDICATORS.filter((indicator) => {
+    return indicators.filter((indicator) => {
       const searchableText = [
         indicator.id,
         indicator.value,
@@ -197,6 +167,7 @@ export default function ThreatIntelligence() {
         indicator.threat,
         indicator.source,
         indicator.status,
+        indicator.description,
       ]
         .join(" ")
         .toLowerCase();
@@ -207,11 +178,12 @@ export default function ThreatIntelligence() {
         typeFilter === "All" || indicator.type === typeFilter;
 
       const matchesSeverity =
-        severityFilter === "All" || indicator.severity === severityFilter;
+        severityFilter === "All" ||
+        indicator.severity === severityFilter;
 
       return matchesSearch && matchesType && matchesSeverity;
     });
-  }, [search, typeFilter, severityFilter]);
+  }, [indicators, search, typeFilter, severityFilter]);
 
   async function handleCopy(value) {
     try {
@@ -221,8 +193,8 @@ export default function ThreatIntelligence() {
       window.setTimeout(() => {
         setCopiedIndicator("");
       }, 1800);
-    } catch {
-      setCopiedIndicator("");
+    } catch (err) {
+      console.error("Copy failed:", err);
     }
   }
 
@@ -232,406 +204,350 @@ export default function ThreatIntelligence() {
     setSeverityFilter("All");
   }
 
+  /* -------- derived views over the same normalized indicators ---------- */
+
+  const indicatorTypes = useMemo(
+    () => ["All", ...new Set(indicators.map((item) => item.type))],
+    [indicators]
+  );
+
+  const severitySegments = useMemo(() => {
+    const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+
+    indicators.forEach((item) => {
+      const key = String(item.severity || "Low");
+
+      if (counts[key] !== undefined) counts[key] += 1;
+    });
+
+    return [
+      { label: "Critical", value: counts.Critical, color: PALETTE.critical },
+      { label: "High", value: counts.High, color: PALETTE.high },
+      { label: "Medium", value: counts.Medium, color: PALETTE.medium },
+      { label: "Low", value: counts.Low, color: PALETTE.low },
+    ];
+  }, [indicators]);
+
+  const topThreats = useMemo(() => {
+    const tally = new Map();
+
+    indicators.forEach((item) => {
+      tally.set(item.threat, (tally.get(item.threat) || 0) + 1);
+    });
+
+    return [...tally.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value]) => ({ label, value }));
+  }, [indicators]);
+
+  const filtersActive =
+    search !== "" || typeFilter !== "All" || severityFilter !== "All";
+
   return (
-    <main className="min-h-screen space-y-6 bg-[#05080d] px-6 py-6 text-slate-200">
-      {/* HEADER */}
-      <section className="flex flex-col justify-between gap-5 border-b border-white/[0.06] pb-6 lg:flex-row lg:items-end">
-        <div>
-          <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-400/70">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-            Security Operations / Threat Intelligence
-          </div>
+    <AppShell connected={!error}>
+      <PageHeader
+        breadcrumb="Analysis"
+        title="Threat intelligence"
+        description="Indicators extracted from detections, with confidence, first and last sighting, and the detection source."
+        status={<Badge tone="slate">{summary.total} indicators</Badge>}
+      />
 
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-100">
-            Threat Intelligence
-          </h1>
+      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
+        {error && <Notice tone="error">{error}</Notice>}
 
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
-            Discover, review and investigate indicators of compromise from
-            connected intelligence sources.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 self-start border border-emerald-400/20 bg-emerald-400/[0.04] px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-emerald-400 lg:self-auto">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Intelligence Feed Online
-        </div>
-      </section>
-
-      {/* SUMMARY CARDS */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          label="Total Indicators"
-          value={summary.total}
-          description="Collected intelligence indicators"
-          accent="bg-cyan-400"
-        />
-
-        <SummaryCard
-          label="Active Indicators"
-          value={summary.active}
-          description="Currently requiring attention"
-          accent="bg-red-400"
-        />
-
-        <SummaryCard
-          label="Critical Indicators"
-          value={summary.critical}
-          description="Highest-priority threat signals"
-          accent="bg-orange-400"
-        />
-
-        <SummaryCard
-          label="High Confidence"
-          value={summary.highConfidence}
-          description="Indicators with confidence above 90%"
-          accent="bg-emerald-400"
-        />
-      </section>
-
-      {/* REGISTRY */}
-      <section className="border border-white/[0.08] bg-[#080e15]">
-        <div className="flex flex-col justify-between gap-4 border-b border-white/[0.07] p-5 xl:flex-row xl:items-center">
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">
-              Intelligence Registry
-            </p>
-
-            <h2 className="mt-2 text-lg font-semibold text-slate-100">
-              Indicators of Compromise
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Review malicious IPs, domains, file hashes and threat metadata.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              {filteredIndicators.length} Results
-            </span>
-
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="border border-white/[0.1] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-300"
-            >
-              Reset Filters
-            </button>
-          </div>
-        </div>
-
-        {/* FILTERS */}
-        <div className="grid grid-cols-1 gap-3 border-b border-white/[0.07] p-5 md:grid-cols-3">
-          <input
-            type="text"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search indicator, source, threat..."
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/50"
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Critical indicators"
+            value={summary.critical}
+            tone={summary.critical > 0 ? "critical" : "good"}
+            emphasis
+            hint="Block or contain first"
           />
 
-          <select
+          <StatCard
+            label="Active"
+            value={summary.active}
+            tone={summary.active > 0 ? "high" : "good"}
+            hint="Still observed in the environment"
+          />
+
+          <StatCard
+            label="High confidence"
+            value={summary.highConfidence}
+            tone="brand"
+            hint="Scored 90 or above"
+          />
+
+          <StatCard
+            label="Total tracked"
+            value={summary.total}
+            hint="Across all detection sources"
+          />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Panel title="Severity distribution">
+            {summary.total === 0 ? (
+              <EmptyState
+                title="Nothing to distribute yet"
+                description="Indicators appear once the detection engine reports alerts."
+              />
+            ) : (
+              <Donut
+                segments={severitySegments}
+                centerValue={summary.total}
+                centerLabel="indicators"
+              />
+            )}
+          </Panel>
+
+          <Panel title="Most frequent threats" hint="By indicator count">
+            {topThreats.length === 0 ? (
+              <EmptyState
+                title="No threat categories yet"
+                description="Categories are grouped from the attack type on each detection."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {topThreats.map((threat) => (
+                  <li
+                    key={threat.label}
+                    className="flex items-center justify-between gap-4"
+                  >
+                    <span className="truncate text-sm text-slate-700">
+                      {threat.label}
+                    </span>
+
+                    <span className="flex items-center gap-3">
+                      <span className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                        <span
+                          className="block h-full rounded-full bg-indigo-500"
+                          style={{
+                            width: `${
+                              (threat.value / topThreats[0].value) * 100
+                            }%`,
+                          }}
+                        />
+                      </span>
+
+                      <span className="w-6 text-right text-sm font-semibold tabular-nums text-slate-900">
+                        {threat.value}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+
+        {/* ---------------------------------------------------- filter bar */}
+
+        <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+          <SearchInput
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search indicator, threat or source"
+            className="lg:max-w-sm lg:flex-1"
+          />
+
+          <SegmentedControl
+            value={severityFilter}
+            onChange={setSeverityFilter}
+            options={SEVERITIES}
+          />
+
+          <Select
+            label="Indicator type"
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value)}
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-300 outline-none focus:border-cyan-400/50"
+            className="lg:w-48"
           >
-            <option value="All">All Indicator Types</option>
-            <option value="IP Address">IP Address</option>
-            <option value="Domain">Domain</option>
-            <option value="File Hash">File Hash</option>
-          </select>
+            {indicatorTypes.map((type) => (
+              <option key={type} value={type}>
+                {type === "All" ? "All types" : type}
+              </option>
+            ))}
+          </Select>
 
-          <select
-            value={severityFilter}
-            onChange={(event) => setSeverityFilter(event.target.value)}
-            className="border border-white/[0.1] bg-[#050a10] px-4 py-3 text-xs text-slate-300 outline-none focus:border-cyan-400/50"
-          >
-            <option value="All">All Severities</option>
-            <option value="Critical">Critical</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-          </select>
+          <div className="flex items-center gap-3 lg:ml-auto">
+            <span className="text-xs tabular-nums text-slate-500">
+              {filteredIndicators.length} of {indicators.length}
+            </span>
+
+            {filtersActive && (
+              <Button size="sm" variant="ghost" onClick={resetFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* TABLE */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1200px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-white/[0.07] bg-white/[0.015]">
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Indicator
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Type
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Threat
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Severity
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Confidence
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Source
-                </th>
-
-                <th className="px-5 py-4 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Status
-                </th>
-
-                <th className="px-5 py-4 text-right text-[9px] font-bold uppercase tracking-[0.16em] text-slate-600">
-                  Action
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredIndicators.map((indicator) => (
-                <tr
-                  key={indicator.id}
-                  className="border-b border-white/[0.06] transition hover:bg-cyan-400/[0.025]"
-                >
-                  <td className="px-5 py-5">
-                    <div className="max-w-[260px]">
-                      <p className="text-[10px] font-bold tracking-wider text-cyan-400/70">
-                        {indicator.id}
-                      </p>
-
-                      <p className="mt-2 break-all font-mono text-xs text-slate-200">
+        <Panel className="overflow-hidden">
+          {loading ? (
+            <LoadingState label="Loading indicators" rows={5} />
+          ) : filteredIndicators.length === 0 ? (
+            <EmptyState
+              icon={Radar}
+              title={
+                indicators.length === 0
+                  ? "No indicators available"
+                  : "No indicators match these filters"
+              }
+              description={
+                indicators.length === 0
+                  ? "The alerts endpoint returned no detections to extract indicators from."
+                  : "Try a broader severity or type filter."
+              }
+            />
+          ) : (
+            <div className="-m-5">
+              <Table
+                columns={[
+                  { key: "spine", label: "", className: "w-[3px] p-0" },
+                  { key: "indicator", label: "Indicator" },
+                  { key: "threat", label: "Threat" },
+                  { key: "severity", label: "Severity" },
+                  { key: "confidence", label: "Confidence" },
+                  { key: "status", label: "Status" },
+                  { key: "seen", label: "Last seen", align: "right" },
+                ]}
+              >
+                {filteredIndicators.map((indicator) => (
+                  <SpineRow
+                    key={indicator.id}
+                    severity={indicator.severity}
+                    selected={selectedIndicator?.id === indicator.id}
+                    onClick={() => setSelectedIndicator(indicator)}
+                  >
+                    <Cell>
+                      <p className="font-mono text-[13px] font-medium text-slate-900">
                         {indicator.value}
                       </p>
-                    </div>
-                  </td>
 
-                  <td className="px-5 py-5">
-                    <TypeBadge type={indicator.type} />
-                  </td>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {indicator.type} · {indicator.source}
+                      </p>
+                    </Cell>
 
-                  <td className="px-5 py-5 text-xs text-slate-400">
-                    {indicator.threat}
-                  </td>
+                    <Cell className="text-slate-700">{indicator.threat}</Cell>
 
-                  <td className="px-5 py-5">
-                    <SeverityBadge severity={indicator.severity} />
-                  </td>
+                    <Cell>
+                      <SeverityBadge severity={indicator.severity} />
+                    </Cell>
 
-                  <td className="px-5 py-5">
-                    <div className="w-24">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-slate-300">
+                    <Cell>
+                      <span className="flex items-center gap-2">
+                        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+                          <span
+                            className="block h-full rounded-full bg-slate-700"
+                            style={{
+                              width: `${Math.min(indicator.confidence, 100)}%`,
+                            }}
+                          />
+                        </span>
+
+                        <span className="text-xs tabular-nums text-slate-600">
                           {indicator.confidence}%
                         </span>
-                      </div>
+                      </span>
+                    </Cell>
 
-                      <div className="h-1.5 overflow-hidden bg-white/[0.08]">
-                        <div
-                          className="h-full bg-cyan-400"
-                          style={{ width: `${indicator.confidence}%` }}
-                        />
-                      </div>
-                    </div>
-                  </td>
+                    <Cell>
+                      <StatusBadge status={indicator.status} />
+                    </Cell>
 
-                  <td className="px-5 py-5 text-xs text-slate-500">
-                    {indicator.source}
-                  </td>
+                    <Cell className="text-right text-xs text-slate-500">
+                      {indicator.lastSeen}
+                    </Cell>
+                  </SpineRow>
+                ))}
+              </Table>
+            </div>
+          )}
+        </Panel>
+      </div>
 
-                  <td className="px-5 py-5">
-                    <StatusBadge status={indicator.status} />
-                  </td>
+      <SidePanel
+        open={Boolean(selectedIndicator)}
+        onClose={() => setSelectedIndicator(null)}
+        title={selectedIndicator?.value}
+        subtitle={selectedIndicator?.threat}
+        footer={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              icon={FileSearch}
+              onClick={() =>
+                navigate("/investigation", {
+                  state: { incident: selectedIndicator?.rawAlert },
+                })
+              }
+            >
+              Investigate this indicator
+            </Button>
 
-                  <td className="px-5 py-5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedIndicator(indicator)}
-                      className="border border-white/[0.1] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-slate-400 transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.04] hover:text-cyan-300"
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            <Button
+              icon={copiedIndicator === selectedIndicator?.value ? Check : Copy}
+              onClick={() => handleCopy(selectedIndicator?.value)}
+            >
+              {copiedIndicator === selectedIndicator?.value
+                ? "Copied"
+                : "Copy value"}
+            </Button>
+          </div>
+        }
+      >
+        {selectedIndicator && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <SeverityBadge severity={selectedIndicator.severity} />
 
-        {filteredIndicators.length === 0 && (
-          <div className="px-5 py-16 text-center">
-            <p className="text-sm font-medium text-slate-300">
-              No indicators found
+              <StatusBadge status={selectedIndicator.status} />
+
+              <Badge tone="indigo">{selectedIndicator.type}</Badge>
+            </div>
+
+            <p className="text-sm leading-6 text-slate-700">
+              {selectedIndicator.description}
             </p>
 
-            <p className="mt-2 text-xs text-slate-600">
-              Try changing your search or filter selection.
-            </p>
+            <Card className="p-4">
+              <p className="text-xs text-slate-500">Confidence</p>
+
+              <p className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
+                {selectedIndicator.confidence}%
+              </p>
+
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-indigo-600"
+                  style={{
+                    width: `${Math.min(selectedIndicator.confidence, 100)}%`,
+                  }}
+                />
+              </div>
+            </Card>
+
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-slate-900">
+                Sighting record
+              </h3>
+
+              <InfoRow label="Indicator ID" value={selectedIndicator.id} mono />
+
+              <InfoRow label="Value" value={selectedIndicator.value} mono />
+
+              <InfoRow label="Source" value={selectedIndicator.source} />
+
+              <InfoRow label="First seen" value={selectedIndicator.firstSeen} />
+
+              <InfoRow label="Last seen" value={selectedIndicator.lastSeen} />
+            </div>
           </div>
         )}
-      </section>
-
-      {/* DETAILS MODAL */}
-      {selectedIndicator && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-2xl border border-white/[0.1] bg-[#080e15]">
-            <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] p-5">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">
-                  Indicator Details
-                </p>
-
-                <h2 className="mt-2 text-xl font-semibold text-slate-100">
-                  {selectedIndicator.id}
-                </h2>
-
-                <p className="mt-2 break-all font-mono text-xs text-slate-400">
-                  {selectedIndicator.value}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedIndicator(null)}
-                className="text-xl text-slate-500 transition hover:text-white"
-                aria-label="Close indicator details"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Indicator Value
-                </p>
-
-                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <p className="break-all font-mono text-sm text-slate-200">
-                    {selectedIndicator.value}
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(selectedIndicator.value)}
-                    className="self-start border border-cyan-400/30 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400/[0.08]"
-                  >
-                    {copiedIndicator === selectedIndicator.value
-                      ? "Copied"
-                      : "Copy Indicator"}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Type
-                </p>
-
-                <div className="mt-2">
-                  <TypeBadge type={selectedIndicator.type} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Threat Category
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedIndicator.threat}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Severity
-                </p>
-
-                <div className="mt-2">
-                  <SeverityBadge severity={selectedIndicator.severity} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Confidence
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedIndicator.confidence}%
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Source
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedIndicator.source}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Status
-                </p>
-
-                <div className="mt-2">
-                  <StatusBadge status={selectedIndicator.status} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  First Seen
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedIndicator.firstSeen}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Last Seen
-                </p>
-
-                <p className="mt-2 text-sm text-slate-300">
-                  {selectedIndicator.lastSeen}
-                </p>
-              </div>
-
-              <div className="sm:col-span-2">
-                <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                  Intelligence Description
-                </p>
-
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  {selectedIndicator.description}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t border-white/[0.08] p-5">
-              <button
-                type="button"
-                onClick={() => setSelectedIndicator(null)}
-                className="border border-cyan-400/30 bg-cyan-400/[0.06] px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400/[0.12]"
-              >
-                Close Details
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </main>
+      </SidePanel>
+    </AppShell>
   );
 }
