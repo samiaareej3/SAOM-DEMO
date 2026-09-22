@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -17,14 +17,12 @@ import {
 import { getAttackGraph } from "../services/dashboardApi";
 
 import {
-  AppShell,
   Badge,
   Button,
   Card,
   EmptyState,
   InfoRow,
   LoadingState,
-  Notice,
   PageHeader,
   Panel,
   SearchInput,
@@ -63,7 +61,7 @@ const NODE_COLORS = {
   asset: "#CA8A04",
   execution: "#EA580C",
   response: "#059669",
-  default: "#4F46E5",
+  default: "#475569",
 };
 
 const KIND_LABEL = {
@@ -282,7 +280,7 @@ function GraphCanvas({ nodes, edges, nodeMap, selectedId, onSelect }) {
             markerHeight="6"
             orient="auto-start-reverse"
           >
-            <path d="M0 0 L10 5 L0 10 z" fill="#4F46E5" />
+            <path d="M0 0 L10 5 L0 10 z" fill="#ED1C2E" />
           </marker>
         </defs>
 
@@ -308,7 +306,7 @@ function GraphCanvas({ nodes, edges, nodeMap, selectedId, onSelect }) {
               key={`${edge.from}-${edge.to}-${index}`}
               d={`M${from.x} ${from.y} C${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`}
               fill="none"
-              stroke={active ? "#4F46E5" : "#CBD5E1"}
+              stroke={active ? "#ED1C2E" : "#CBD5E1"}
               strokeWidth={active ? 2 : 1.5}
               markerEnd={`url(#${active ? "graph-arrow-active" : "graph-arrow"})`}
             >
@@ -341,18 +339,18 @@ function GraphCanvas({ nodes, edges, nodeMap, selectedId, onSelect }) {
                   onSelect(node);
                 }
               }}
-              className="cursor-pointer focus:outline-none"
+              className="cursor-pointer focus:outline-none transition-opacity duration-150 hover:opacity-95"
             >
               <rect
                 width={NODE_WIDTH}
                 height={NODE_HEIGHT}
                 rx="10"
                 fill="#FFFFFF"
-                stroke={selected ? "#4F46E5" : "#E4E8EE"}
+                stroke={selected ? "#ED1C2E" : "#E4E8EE"}
                 strokeWidth={selected ? 2 : 1}
                 style={{
                   filter: selected
-                    ? "drop-shadow(0 6px 14px rgba(79,70,229,.18))"
+                    ? "drop-shadow(0 6px 14px rgba(237,28,46,.18))"
                     : "drop-shadow(0 1px 2px rgba(15,23,42,.06))",
                 }}
               />
@@ -690,7 +688,7 @@ export default function AttackGraph() {
   }, [selectedNode, graphEdges, nodeMap]);
 
   return (
-    <AppShell connected={!error}>
+    <>
       <PageHeader
         breadcrumb="Analysis"
         title="Attack graph"
@@ -713,8 +711,16 @@ export default function AttackGraph() {
         }
       />
 
-      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
-        {error && <Notice tone="error">{error}</Notice>}
+    <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-5 lg:px-8">
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
@@ -749,7 +755,7 @@ export default function AttackGraph() {
 
         {/* ---------------------------------------------------- filter bar */}
 
-        <div className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+        <div className="flex flex-col gap-2.5 border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
           <SearchInput
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -830,15 +836,20 @@ export default function AttackGraph() {
               ) : (
                 <div className="space-y-5">
                   <div className="flex items-start gap-3">
-                    <span
-                      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                      style={{
-                        backgroundColor: `${selectedNode.color}14`,
-                        color: selectedNode.color,
-                      }}
-                    >
-                      <selectedNode.icon size={18} />
-                    </span>
+                    {(() => {
+                      const SelectedIcon = selectedNode.icon;
+                      return (
+                        <span
+                          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                          style={{
+                            backgroundColor: `${selectedNode.color}14`,
+                            color: selectedNode.color,
+                          }}
+                        >
+                          <SelectedIcon size={18} />
+                        </span>
+                      );
+                    })()}
 
                     <div className="min-w-0">
                       <p className="break-words font-medium text-slate-900">
@@ -908,7 +919,7 @@ export default function AttackGraph() {
                             <button
                               type="button"
                               onClick={() => setSelectedNode(node)}
-                              className="truncate text-left hover:text-indigo-700 hover:underline"
+                              className="truncate text-left hover:text-slate-900 hover:underline"
                             >
                               {node.label}
                             </button>
@@ -925,7 +936,7 @@ export default function AttackGraph() {
                             <button
                               type="button"
                               onClick={() => setSelectedNode(node)}
-                              className="truncate text-left hover:text-indigo-700 hover:underline"
+                              className="truncate text-left hover:text-slate-900 hover:underline"
                             >
                               {node.label}
                             </button>
@@ -960,6 +971,6 @@ export default function AttackGraph() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

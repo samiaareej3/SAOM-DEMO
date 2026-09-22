@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -953,7 +953,7 @@ export default function Investigation() {
                         type="button"
                         onClick={() => handleIncidentSelect(incident.id)}
                         className={`flex w-full gap-3 px-5 py-3 text-left transition-colors duration-150 ${
-                          active ? "bg-indigo-50/70" : "hover:bg-slate-50"
+                          active ? "bg-slate-100/70" : "hover:bg-slate-50"
                         }`}
                       >
                         <span
@@ -1067,7 +1067,7 @@ export default function Investigation() {
                         if (event.key === "Enter") addNote();
                       }}
                       placeholder="Record what you observed"
-                      className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                      className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ED1C2E] focus-visible:ring-offset-2"
                     />
 
                     <Button

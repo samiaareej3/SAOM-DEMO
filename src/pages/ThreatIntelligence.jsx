@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Check, Copy, FileSearch, Radar } from "lucide-react";
@@ -322,7 +322,7 @@ export default function ThreatIntelligence() {
                     <span className="flex items-center gap-3">
                       <span className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
                         <span
-                          className="block h-full rounded-full bg-indigo-500"
+                          className="block h-full rounded-full bg-slate-900"
                           style={{
                             width: `${
                               (threat.value / topThreats[0].value) * 100
@@ -522,7 +522,7 @@ export default function ThreatIntelligence() {
 
               <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
-                  className="h-full rounded-full bg-indigo-600"
+                  className="h-full rounded-full bg-slate-900"
                   style={{
                     width: `${Math.min(selectedIndicator.confidence, 100)}%`,
                   }}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+ import { useState } from "react";
 
 import { Play, Radar, ShieldCheck } from "lucide-react";
 
@@ -171,7 +171,7 @@ export default function Scanner() {
               onChange={(event) =>
                 setSimulateThreats(event.target.checked)
               }
-              className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+              className="h-4 w-4 rounded border-slate-300 accent-[#ED1C2E]"
             />
 
             Simulate threats
@@ -183,7 +183,7 @@ export default function Scanner() {
         {loading && (
           <Card className="overflow-hidden p-0">
             <div className="h-0.5 w-full overflow-hidden bg-slate-100">
-              <div className="h-full w-full animate-pulse bg-indigo-500" />
+              <div className="h-full w-full animate-pulse bg-[#ED1C2E]" />
             </div>
 
             <p className="px-5 py-4 text-sm text-slate-600">

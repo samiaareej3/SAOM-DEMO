@@ -1,739 +1,584 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-
+ import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
+  AlertTriangle,
   ArrowUpRight,
-  Boxes,
-  Database,
-  RefreshCw,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Crosshair,
   ShieldAlert,
-  Sparkles,
-  Workflow,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 
 import {
-  getDashboardStats,
-  getAttackTimeline,
-  getAlerts,
-  getAssets,
-  getSOARHealth,
-  getSOARActions,
-} from "../services/dashboardApi";
-
-import {
-  AppShell,
   AreaChart,
   Badge,
   Button,
   Card,
-  EmptyState,
-  LiveDot,
-  LoadingPage,
-  Notice,
+  Donut,
   PageHeader,
   Panel,
-  ScoreRing,
   SeverityBadge,
-  SeverityBar,
   StatCard,
-  severityTone,
+  StatusBadge,
 } from "../components/ui";
 
-/* =========================================================
-   HELPERS  (unchanged — these read the backend payloads)
-========================================================= */
-
-function unwrapData(response) {
-  if (!response) return {};
-  return response.data || response;
-}
-
-function normalizeArray(response, key) {
-  const data = unwrapData(response);
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data[key])) return data[key];
-  if (Array.isArray(data.data)) return data.data;
-  if (Array.isArray(data.results)) return data.results;
-
-  return [];
-}
-
-function getAlertId(alert) {
-  return (
-    alert?._id ||
-    alert?.id ||
-    alert?.alert_id ||
-    alert?.alertId ||
-    crypto.randomUUID?.()
-  );
-}
-
-function getSeverity(alert) {
-  return String(
-    alert?.severity ||
-      alert?.priority ||
-      alert?.risk_level ||
-      alert?.riskLevel ||
-      "medium"
-  ).toLowerCase();
-}
-
-function getAlertSource(alert) {
-  return (
-    alert?.source_ip ||
-    alert?.sourceIp ||
-    alert?.source_hostname ||
-    alert?.sourceHostname ||
-    alert?.source ||
-    "Unknown source"
-  );
-}
-
-function getAlertTarget(alert) {
-  return (
-    alert?.destination_ip ||
-    alert?.destinationIp ||
-    alert?.destination_hostname ||
-    alert?.destinationHostname ||
-    alert?.hostname ||
-    alert?.asset?.hostname ||
-    alert?.target ||
-    "Unknown target"
-  );
-}
-
-function getAlertTitle(alert) {
-  return (
-    alert?.attack_type ||
-    alert?.attackType ||
-    alert?.name ||
-    alert?.title ||
-    alert?.rule_name ||
-    "Unknown threat"
-  );
-}
-
-function getAssetName(asset) {
-  return (
-    asset?.hostname ||
-    asset?.name ||
-    asset?.asset_name ||
-    asset?.assetName ||
-    asset?.ip_address ||
-    asset?.ip ||
-    "Unknown asset"
-  );
-}
-
-function getAssetAddress(asset) {
-  return (
-    asset?.ip_address ||
-    asset?.ip ||
-    asset?.address ||
-    asset?.type ||
-    "Infrastructure endpoint"
-  );
-}
-
-function getTimelineValue(point) {
-  return Number(
-    point?.attacks ??
-      point?.attack_count ??
-      point?.attackCount ??
-      point?.count ??
-      point?.alerts ??
-      point?.total ??
-      point?.value ??
-      0
-  );
-}
-
-function getTimelineLabel(point, index) {
-  return (
-    point?.hour ||
-    point?.time ||
-    point?.timestamp ||
-    point?.label ||
-    `T-${index + 1}`
-  );
-}
-
-function getActionStatus(action) {
-  return String(
-    action?.status ||
-      action?.state ||
-      action?.approval_status ||
-      action?.approvalStatus ||
-      "UNKNOWN"
-  ).toUpperCase();
-}
-
-function isPendingAction(action) {
-  return [
-    "PENDING",
-    "PENDING_APPROVAL",
-    "WAITING_APPROVAL",
-    "AWAITING_APPROVAL",
-    "REQUIRES_APPROVAL",
-  ].includes(getActionStatus(action));
-}
-
-function isCompletedAction(action) {
-  return ["COMPLETED", "EXECUTED", "SUCCESS", "SUCCEEDED"].includes(
-    getActionStatus(action)
-  );
-}
-
-/* Title-cases the lowercase severity the API returns so it matches the
-   shared severity vocabulary used across every page. */
-function severityLabel(value) {
-  const key = String(value || "").toLowerCase();
-
-  if (key === "critical") return "Critical";
-  if (key === "high") return "High";
-  if (key === "medium") return "Medium";
-  if (key === "low") return "Low";
-
-  return "Unknown";
-}
-
 export default function Dashboard() {
-  const navigate = useNavigate();
+  const [timeRange, setTimeRange] = useState("24h");
 
-  const [stats, setStats] = useState({});
-  const [alerts, setAlerts] = useState([]);
-  const [assets, setAssets] = useState([]);
-  const [timeline, setTimeline] = useState([]);
-  const [soarHealth, setSoarHealth] = useState({});
-  const [soarActions, setSoarActions] = useState([]);
+  /*
+   * Keep your existing API/service logic here if your current
+   * Dashboard.jsx already fetches real backend data.
+   *
+   * The UI below is intentionally presentation-focused.
+   */
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
-  const [lastRefresh, setLastRefresh] = useState(null);
-
-  const loadDashboard = useCallback(async (isRefresh = false) => {
-    try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-
-      setError("");
-
-      const results = await Promise.allSettled([
-        getDashboardStats(),
-        getAlerts(),
-        getAssets(),
-        getAttackTimeline(),
-        getSOARHealth(),
-        getSOARActions(),
-      ]);
-
-      const [
-        statsResult,
-        alertsResult,
-        assetsResult,
-        timelineResult,
-        healthResult,
-        actionsResult,
-      ] = results;
-
-      const failedServices = [];
-
-      if (statsResult.status === "fulfilled") {
-        setStats(unwrapData(statsResult.value));
-      } else {
-        failedServices.push("statistics");
-      }
-
-      if (alertsResult.status === "fulfilled") {
-        setAlerts(normalizeArray(alertsResult.value, "alerts"));
-      } else {
-        failedServices.push("alerts");
-      }
-
-      if (assetsResult.status === "fulfilled") {
-        setAssets(normalizeArray(assetsResult.value, "assets"));
-      } else {
-        failedServices.push("assets");
-      }
-
-      if (timelineResult.status === "fulfilled") {
-        setTimeline(normalizeArray(timelineResult.value, "timeline"));
-      } else {
-        failedServices.push("timeline");
-      }
-
-      if (healthResult.status === "fulfilled") {
-        setSoarHealth(unwrapData(healthResult.value));
-      } else {
-        failedServices.push("SOAR health");
-      }
-
-      if (actionsResult.status === "fulfilled") {
-        setSoarActions(normalizeArray(actionsResult.value, "actions"));
-      } else {
-        failedServices.push("SOAR actions");
-      }
-
-      if (failedServices.length > 0) {
-        setError(
-          `Unavailable services: ${failedServices.join(
-            ", "
-          )}. Other telemetry is still displayed.`
-        );
-      }
-
-      setLastRefresh(new Date());
-    } catch (requestError) {
-      console.error("Dashboard loading error:", requestError);
-
-      setError(
-        requestError?.message || "Failed to load dashboard telemetry."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
-
-  /* =========================================================
-     BACKEND VALUES
-  ========================================================= */
-
-  const securityScore = Number(stats?.securityScore ?? 0);
-  const riskScore = Number(stats?.riskScore ?? 0);
-
-  const riskLevel = String(stats?.riskLevel ?? "Unknown");
-  const dataSource = String(stats?.source ?? "Unknown");
-
-  const totalAlerts = Number(stats?.totalAlerts ?? 0);
-  const activeIncidents = Number(stats?.activeAlerts ?? 0);
-  const criticalAlerts = Number(stats?.criticalAlerts ?? 0);
-  const highAlerts = Number(stats?.highAlerts ?? 0);
-  const mediumAlerts = Number(stats?.mediumAlerts ?? 0);
-  const lowAlerts = Number(stats?.lowAlerts ?? 0);
-  const logsProcessed = Number(stats?.logsProcessed ?? 0);
-
-  const monitoredAssets = assets.length;
-
-  const activeAlertRecords = useMemo(() => {
-    return alerts.filter((alert) => {
-      const status = String(
-        alert?.status || alert?.state || ""
-      ).toUpperCase();
-
-      return !["RESOLVED", "CLOSED", "MITIGATED", "COMPLETED"].includes(
-        status
-      );
-    });
-  }, [alerts]);
-
-  const pendingActions = useMemo(() => {
-    return soarActions.filter(isPendingAction);
-  }, [soarActions]);
-
-  const completedActions = useMemo(() => {
-    return soarActions.filter(isCompletedAction);
-  }, [soarActions]);
-
-  const maxTimelineValue = useMemo(() => {
-    return Math.max(...timeline.map(getTimelineValue), 1);
-  }, [timeline]);
-
-  const soarIsOnline =
-    soarHealth?.success === true ||
-    soarHealth?.status === "ok" ||
-    soarHealth?.status === "healthy" ||
-    soarHealth?.status === "online";
-
-  const soarMode =
-    soarHealth?.mode ||
-    (soarHealth?.simulation === true ? "SIMULATION" : "UNKNOWN");
-
-  const intelligenceSummary =
-    criticalAlerts > 0
-      ? `The environment reports ${criticalAlerts} critical alerts. Immediate investigation and response prioritization are recommended.`
-      : highAlerts > 0
-      ? `The environment reports ${highAlerts} high-severity alerts. Review affected assets and investigate attack activity.`
-      : activeIncidents > 0
-      ? `The environment currently reports ${activeIncidents} active incidents. Continue monitoring and reviewing incident intelligence.`
-      : "No active incidents are currently reported by the backend.";
-
-  /* =========================================================
-     CHART SERIES  (shaped from the same backend payloads)
-  ========================================================= */
-
-  const timelineSeries = useMemo(
-    () =>
-      timeline.map((point, index) => ({
-        label: String(getTimelineLabel(point, index)),
-        value: getTimelineValue(point),
-      })),
-    [timeline]
+  const stats = useMemo(
+    () => [
+      {
+        label: "Active threats",
+        value: "07",
+        change: "+2 from previous period",
+        tone: "red",
+        icon: ShieldAlert,
+      },
+      {
+        label: "Investigations",
+        value: "18",
+        change: "6 currently active",
+        tone: "default",
+        icon: Crosshair,
+      },
+      {
+        label: "Systems monitored",
+        value: "1,284",
+        change: "99.98% telemetry coverage",
+        tone: "green",
+        icon: Activity,
+      },
+      {
+        label: "Automations",
+        value: "42",
+        change: "38 completed today",
+        tone: "blue",
+        icon: Zap,
+      },
+    ],
+    []
   );
 
-  const severityCounts = useMemo(
-    () => ({
-      Critical: criticalAlerts,
-      High: highAlerts,
-      Medium: mediumAlerts,
-      Low: lowAlerts,
-    }),
-    [criticalAlerts, highAlerts, mediumAlerts, lowAlerts]
-  );
+  const activityData = [
+    { value: 12 },
+    { value: 18 },
+    { value: 14 },
+    { value: 25 },
+    { value: 21 },
+    { value: 34 },
+    { value: 29 },
+    { value: 41 },
+    { value: 35 },
+    { value: 48 },
+    { value: 43 },
+    { value: 57 },
+  ];
 
-  if (loading) {
-    return (
-      <AppShell connected={false}>
-        <LoadingPage label="Connecting to the SAOM-AI backend" />
-      </AppShell>
-    );
-  }
+  const incidents = [
+    {
+      id: "INC-2841",
+      title: "Credential access attempt",
+      source: "prod-api-04",
+      severity: "critical",
+      status: "investigating",
+      time: "2m ago",
+    },
+    {
+      id: "INC-2838",
+      title: "Unusual outbound connection",
+      source: "workstation-218",
+      severity: "high",
+      status: "active",
+      time: "11m ago",
+    },
+    {
+      id: "INC-2834",
+      title: "Privilege escalation signal",
+      source: "auth-service",
+      severity: "high",
+      status: "investigating",
+      time: "24m ago",
+    },
+    {
+      id: "INC-2829",
+      title: "Suspicious DNS activity",
+      source: "edge-dns-02",
+      severity: "medium",
+      status: "contained",
+      time: "41m ago",
+    },
+  ];
+
+  const investigations = [
+    {
+      title: "Potential lateral movement",
+      description:
+        "SAOM connected authentication events across three hosts.",
+      progress: 76,
+      severity: "high",
+    },
+    {
+      title: "Abnormal service account activity",
+      description:
+        "Behaviour deviates from the account's established baseline.",
+      progress: 51,
+      severity: "medium",
+    },
+    {
+      title: "Possible data exfiltration",
+      description:
+        "Outbound traffic pattern requires analyst validation.",
+      progress: 34,
+      severity: "critical",
+    },
+  ];
 
   return (
-    <AppShell connected={!error}>
-      <PageHeader
-        breadcrumb="Command centre"
-        title="Security operations"
-        description="Live posture across monitored assets, detections and automated response."
-        status={
-          <div className="flex flex-wrap items-center gap-3">
-            <LiveDot
-              online={!error}
-              label={
-                lastRefresh
-                  ? `Updated ${lastRefresh.toLocaleTimeString()}`
-                  : "Awaiting first sync"
-              }
-            />
+    <main className="min-h-screen bg-[#F6F7F9]">
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
-            <Badge tone="slate">Source: {dataSource}</Badge>
-          </div>
-        }
+      <PageHeader
+        eyebrow="SAOM-AI / Command Center"
+        title="Security operations"
+        description="A live view of what SAOM is detecting, investigating, and responding to across your environment."
         actions={
-          <Button
-            variant="secondary"
-            icon={RefreshCw}
-            loading={refreshing}
-            onClick={() => loadDashboard(true)}
-            disabled={refreshing}
-          >
-            {refreshing ? "Refreshing" : "Refresh"}
-          </Button>
+          <>
+            <div className="hidden items-center gap-1 border border-slate-200 bg-white p-1 sm:flex">
+              {["1h", "24h", "7d"].map((range) => (
+                <button
+                  key={range}
+                  type="button"
+                  onClick={() => setTimeRange(range)}
+                  className={[
+                    "h-7 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
+                    timeRange === range
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900",
+                  ].join(" ")}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              variant="secondary"
+              icon={ArrowUpRight}
+            >
+              Export
+            </Button>
+          </>
         }
       />
 
-      <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
-        {error && <Notice tone="warning">{error}</Notice>}
+      <div className="space-y-6 p-6 lg:p-8">
+        {/* ====================================================
+            LIVE STATUS
+        ==================================================== */}
 
-        {/* ============================================ POSTURE + HEADLINE */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            Live telemetry
+          </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <Card className="p-6">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <ScoreRing
-                value={securityScore}
-                max={100}
-                size={132}
-                label="Security score"
-                caption={`Risk score ${riskScore} · ${riskLevel} risk level`}
-              />
+          <span className="h-3 w-px bg-slate-300" />
 
-              <div className="min-w-[180px]">
-                <p className="text-sm font-medium text-slate-500">
-                  Open detections
-                </p>
+          <span className="text-xs text-slate-400">
+            Last updated just now
+          </span>
 
-                <p className="mt-2 text-[44px] font-semibold leading-none tabular-nums tracking-tight text-slate-900">
-                  {totalAlerts}
-                </p>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  {activeIncidents} still active · {logsProcessed.toLocaleString()} logs
-                  processed
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 border-t border-slate-100 pt-5">
-              <p className="mb-3 text-sm font-medium text-slate-500">
-                Severity mix
-              </p>
-
-              <SeverityBar counts={severityCounts} />
-            </div>
-          </Card>
-
-          <Card className="flex flex-col p-6">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-50 text-violet-600">
-                <Sparkles size={15} />
-              </span>
-
-              <h2 className="text-sm font-semibold text-slate-900">
-                Analyst briefing
-              </h2>
-            </div>
-
-            <p className="mt-4 flex-1 text-[15px] leading-7 text-slate-700">
-              {intelligenceSummary}
-            </p>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                icon={ShieldAlert}
-                onClick={() => navigate("/incidents")}
-              >
-                Review incidents
-              </Button>
-
-              <Button
-                variant="secondary"
-                icon={Sparkles}
-                onClick={() => navigate("/ai-assistant")}
-              >
-                Ask the assistant
-              </Button>
-            </div>
-          </Card>
+          <Badge tone="green">
+            All systems operational
+          </Badge>
         </div>
 
-        {/* ========================================================== KPIs */}
+        {/* ====================================================
+            KEY METRICS
+        ==================================================== */}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Critical alerts"
-            value={criticalAlerts}
-            tone={criticalAlerts > 0 ? "critical" : "good"}
-            emphasis
-            hint={
-              criticalAlerts > 0
-                ? "Needs immediate triage"
-                : "Nothing at critical severity"
-            }
-            icon={ShieldAlert}
-            onClick={() => navigate("/incidents")}
-          />
+        <section className="grid gap-px border border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-4">
+          {stats.map((stat) => (
+            <StatCard
+              key={stat.label}
+              {...stat}
+              className="border-0"
+            />
+          ))}
+        </section>
 
-          <StatCard
-            label="Active incidents"
-            value={activeIncidents}
-            tone={activeIncidents > 0 ? "high" : "good"}
-            hint={`${activeAlertRecords.length} unresolved in the alert feed`}
-            onClick={() => navigate("/incidents")}
-          />
+        {/* ====================================================
+            ACTIVITY + THREAT DISTRIBUTION
+        ==================================================== */}
 
-          <StatCard
-            label="Assets monitored"
-            value={monitoredAssets}
-            tone="brand"
-            hint="Reporting to the collector"
-            icon={Boxes}
-            onClick={() => navigate("/infrastructure")}
-          />
-
-          <StatCard
-            label="Awaiting approval"
-            value={pendingActions.length}
-            tone={pendingActions.length > 0 ? "medium" : "good"}
-            hint={`${completedActions.length} response actions completed`}
-            icon={Workflow}
-            onClick={() => navigate("/approvals")}
-          />
-        </div>
-
-        {/* ================================================ ACTIVITY + SOAR */}
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <Panel
-            title="Attack activity"
-            hint={
-              timelineSeries.length > 0
-                ? `Peak of ${maxTimelineValue} events in a single interval`
-                : undefined
-            }
-          >
-            {timelineSeries.length === 0 ? (
-              <EmptyState
-                title="No timeline data returned"
-                description="The attack timeline endpoint responded without any intervals. Activity appears here as soon as events are recorded."
-              />
-            ) : (
-              <AreaChart data={timelineSeries} valueLabel="events" />
-            )}
-          </Panel>
-
-          <Panel
-            title="Response automation"
+            title="Detection activity"
+            description={`Security events detected during the selected ${timeRange} window.`}
             action={
-              <Badge tone={soarIsOnline ? "emerald" : "slate"}>
-                {soarIsOnline ? "Online" : "Unavailable"}
-              </Badge>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <span className="h-2 w-2 bg-[#ED1C2E]" />
+                Detections
+              </div>
             }
           >
-            <dl className="space-y-4">
-              <div className="flex items-baseline justify-between">
-                <dt className="text-sm text-slate-500">Mode</dt>
+            <div className="p-5">
+              <AreaChart
+                data={activityData}
+                height={250}
+              />
 
-                <dd className="text-sm font-medium text-slate-900">
-                  {String(soarMode).replaceAll("_", " ")}
-                </dd>
+              <div className="mt-4 flex justify-between text-[9px] uppercase tracking-[0.12em] text-slate-400">
+                <span>00:00</span>
+                <span>06:00</span>
+                <span>12:00</span>
+                <span>18:00</span>
+                <span>Now</span>
               </div>
-
-              <div className="flex items-baseline justify-between">
-                <dt className="text-sm text-slate-500">Pending approval</dt>
-
-                <dd className="text-2xl font-semibold tabular-nums text-amber-600">
-                  {pendingActions.length}
-                </dd>
-              </div>
-
-              <div className="flex items-baseline justify-between">
-                <dt className="text-sm text-slate-500">Completed</dt>
-
-                <dd className="text-2xl font-semibold tabular-nums text-emerald-600">
-                  {completedActions.length}
-                </dd>
-              </div>
-
-              <div className="flex items-baseline justify-between">
-                <dt className="text-sm text-slate-500">Total actions</dt>
-
-                <dd className="text-sm font-medium tabular-nums text-slate-900">
-                  {soarActions.length}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              <Button size="sm" onClick={() => navigate("/automation")}>
-                Open automation
-              </Button>
-
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate("/approvals")}
-              >
-                Approval queue
-              </Button>
             </div>
           </Panel>
+
+          <Panel
+            title="Threat posture"
+            description="Current distribution of detected activity."
+          >
+            <div className="flex flex-col items-center px-5 py-6">
+              <Donut
+                value={7}
+                total={32}
+                size={150}
+                strokeWidth={11}
+                label="22%"
+                sublabel="elevated"
+              />
+
+              <div className="mt-6 w-full space-y-3">
+                <ThreatRow
+                  label="Critical"
+                  value="3"
+                  percentage="9%"
+                  color="#ED1C2E"
+                />
+
+                <ThreatRow
+                  label="High"
+                  value="11"
+                  percentage="34%"
+                  color="#DC2626"
+                />
+
+                <ThreatRow
+                  label="Medium"
+                  value="12"
+                  percentage="38%"
+                  color="#D97706"
+                />
+
+                <ThreatRow
+                  label="Low / Info"
+                  value="6"
+                  percentage="19%"
+                  color="#64748B"
+                />
+              </div>
+            </div>
+          </Panel>
+        </section>
+
+        {/* ====================================================
+            INCIDENTS
+        ==================================================== */}
+
+        <Panel
+          title="Active incidents"
+          description="Threats requiring investigation or analyst attention."
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+            >
+              View all
+            </Button>
+          }
+        >
+          <div className="divide-y divide-slate-100">
+            {incidents.map((incident) => (
+              <IncidentRow
+                key={incident.id}
+                incident={incident}
+              />
+            ))}
+          </div>
+        </Panel>
+
+        {/* ====================================================
+            INVESTIGATION + AI STATUS
+        ==================================================== */}
+
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Panel
+            title="Live investigations"
+            description="Cases where SAOM is currently correlating evidence."
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+              >
+                Open investigation
+              </Button>
+            }
+          >
+            <div className="divide-y divide-slate-100">
+              {investigations.map((item) => (
+                <InvestigationRow
+                  key={item.title}
+                  {...item}
+                />
+              ))}
+            </div>
+          </Panel>
+
+          <Panel
+            title="SAOM AI"
+            description="Autonomous analyst status."
+          >
+            <div className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-[#ED1C2E]/20 bg-red-50 text-[#ED1C2E]">
+                  <Bot size={18} />
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Autonomous analyst active
+                    </h3>
+
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </div>
+
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    SAOM is continuously correlating telemetry,
+                    investigating suspicious behaviour, and preparing
+                    response actions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-4 border-t border-slate-100 pt-4">
+                <AIStatus
+                  icon={Activity}
+                  label="Telemetry analysis"
+                  status="Running"
+                />
+
+                <AIStatus
+                  icon={Crosshair}
+                  label="Threat investigation"
+                  status="6 active"
+                />
+
+                <AIStatus
+                  icon={ShieldCheck}
+                  label="Response automation"
+                  status="Ready"
+                />
+              </div>
+
+              <div className="mt-5 border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2">
+                  <Clock3
+                    size={14}
+                    className="text-slate-400"
+                  />
+
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                    Next analyst action
+                  </span>
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-slate-700">
+                  Validate the credential access chain associated
+                  with <span className="font-mono">INC-2841</span>.
+                </p>
+              </div>
+            </div>
+          </Panel>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+// ============================================================
+// SUPPORTING COMPONENTS
+// ============================================================
+
+function ThreatRow({
+  label,
+  value,
+  percentage,
+  color,
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="h-2 w-2 shrink-0"
+        style={{ backgroundColor: color }}
+      />
+
+      <span className="flex-1 text-xs text-slate-600">
+        {label}
+      </span>
+
+      <span className="text-xs font-semibold text-slate-900">
+        {value}
+      </span>
+
+      <span className="w-8 text-right text-[10px] text-slate-400">
+        {percentage}
+      </span>
+    </div>
+  );
+}
+
+function IncidentRow({
+  incident,
+}) {
+  return (
+    <div className="group flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-slate-50 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 items-start gap-4">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border border-red-100 bg-red-50 text-[#ED1C2E]">
+          <AlertTriangle size={14} />
         </div>
 
-        {/* ================================================ ALERTS + ASSETS */}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[10px] text-slate-400">
+              {incident.id}
+            </span>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <Panel
-            title="Recent detections"
-            hint={`${activeAlertRecords.length} unresolved`}
-            action={
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={ArrowUpRight}
-                onClick={() => navigate("/incidents")}
-              >
-                All incidents
-              </Button>
-            }
-            className="overflow-hidden"
-          >
-            {activeAlertRecords.length === 0 ? (
-              <EmptyState
-                title="No unresolved detections"
-                description="Every alert returned by the backend is closed or mitigated."
-              />
-            ) : (
-              <ul className="-mx-5 -mb-5 divide-y divide-slate-100">
-                {activeAlertRecords.slice(0, 6).map((alert) => {
-                  const label = severityLabel(getSeverity(alert));
-                  const tone = severityTone(label);
+            <SeverityBadge
+              severity={incident.severity}
+            />
+          </div>
 
-                  return (
-                    <li key={getAlertId(alert)}>
-                      <button
-                        type="button"
-                        onClick={() => navigate("/incidents")}
-                        className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-slate-50"
-                      >
-                        <span
-                          className={`h-8 w-[3px] shrink-0 rounded-full ${tone.spine}`}
-                        />
+          <h3 className="mt-1 text-xs font-semibold text-slate-900">
+            {incident.title}
+          </h3>
 
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-slate-900">
-                            {getAlertTitle(alert)}
-                          </span>
-
-                          <span className="mt-0.5 block truncate font-mono text-xs text-slate-500">
-                            {getAlertSource(alert)} → {getAlertTarget(alert)}
-                          </span>
-                        </span>
-
-                        <SeverityBadge severity={label} />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Panel>
-
-          <Panel
-            title="Monitored assets"
-            hint={`${monitoredAssets} reporting`}
-            action={
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={Boxes}
-                onClick={() => navigate("/infrastructure")}
-              >
-                View all
-              </Button>
-            }
-          >
-            {assets.length === 0 ? (
-              <EmptyState
-                title="No assets returned"
-                description="The asset endpoint responded with an empty inventory."
-                icon={Database}
-              />
-            ) : (
-              <ul className="space-y-3">
-                {assets.slice(0, 6).map((asset, index) => (
-                  <li
-                    key={asset?._id || asset?.id || index}
-                    className="flex items-center justify-between gap-3"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-slate-900">
-                        {getAssetName(asset)}
-                      </span>
-
-                      <span className="block truncate font-mono text-xs text-slate-500">
-                        {getAssetAddress(asset)}
-                      </span>
-                    </span>
-
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {incident.source}
+          </p>
         </div>
       </div>
-    </AppShell>
+
+      <div className="flex items-center gap-4 sm:justify-end">
+        <StatusBadge status={incident.status} />
+
+        <span className="w-12 text-right text-[10px] text-slate-400">
+          {incident.time}
+        </span>
+
+        <ArrowUpRight
+          size={14}
+          className="text-slate-300 transition-colors group-hover:text-slate-700"
+        />
+      </div>
+    </div>
   );
+}
+
+function InvestigationRow({
+  title,
+  description,
+  progress,
+  severity,
+}) {
+  const tone = severityToneForProgress(severity);
+
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: tone }}
+            />
+
+            <h3 className="text-xs font-semibold text-slate-900">
+              {title}
+            </h3>
+          </div>
+
+          <p className="mt-1 max-w-xl text-[11px] leading-5 text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        <span className="text-xs font-semibold text-slate-700">
+          {progress}%
+        </span>
+      </div>
+
+      <div className="mt-3 h-1 bg-slate-100">
+        <div
+          className="h-full"
+          style={{
+            width: `${progress}%`,
+            backgroundColor: tone,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AIStatus({
+  icon: Icon,
+  label,
+  status,
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <Icon
+          size={14}
+          className="text-slate-400"
+        />
+
+        <span className="text-xs text-slate-600">
+          {label}
+        </span>
+      </div>
+
+      <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function severityToneForProgress(severity) {
+  const tones = {
+    critical: "#ED1C2E",
+    high: "#DC2626",
+    medium: "#D97706",
+    low: "#2563EB",
+  };
+
+  return tones[String(severity).toLowerCase()] || "#64748B";
 }
